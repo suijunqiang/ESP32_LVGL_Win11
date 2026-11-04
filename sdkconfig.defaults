@@ -1,0 +1,51 @@
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240=y
+
+# PSRAM — needed for screenshot buffer (full-screen RGB565)
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_120M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+
+# Wi-Fi + MQTT + mbedTLS push the image past the default 1 MB app slot.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# LVGL: RGB565 big-endian (SWAPPED) matches ILI9341 panel native byte order.
+# Use CLIB malloc so LVGL allocations go through PSRAM (via SPIRAM_USE_MALLOC).
+CONFIG_LV_COLOR_FORMAT_RGB565_SWAPPED=y
+CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_USE_CLIB_STRING=y
+CONFIG_LV_USE_CLIB_SPRINTF=y
+CONFIG_LV_USE_OS=0
+CONFIG_LV_USE_LOG=y
+CONFIG_LV_LOG_LEVEL_WARN=y
+CONFIG_LV_USE_SNAPSHOT=y
+
+# Fonts used by the Win11 theme: tiny=10, small/body=12, large=16.
+CONFIG_LV_FONT_MONTSERRAT_10=y
+CONFIG_LV_FONT_MONTSERRAT_12=y
+CONFIG_LV_FONT_MONTSERRAT_16=y
+
+# More room for the LVGL task and the network stack.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_FREERTOS_HZ=1000
+
+# Bluetooth LE — the Bluetooth app runs the NimBLE host (GAP scan/adv/connect
+# plus a custom GATT service). Bluedroid is not used.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_BLUEDROID_ENABLED=n
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=y
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=2
+# Wi-Fi and BLE share the radio, let the coexistence layer arbitrate.
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
+# 4 KiB is too small for the NimBLE host task while scanning; GAP discovery
+# reports trigger bt_device_add (sort) + vsnprintf logging on the host stack.
+CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=8192
