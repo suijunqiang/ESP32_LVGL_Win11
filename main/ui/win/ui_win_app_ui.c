@@ -450,7 +450,6 @@ static void hc_watch_create(lv_obj_t *parent)
 #define VD_GOLD         lv_color_hex(0xF4B860)
 #define VD_TEXT         lv_color_hex(0xF2F5F8)
 #define VD_MUTED        lv_color_hex(0x8E98A6)
-#define VD_PANEL        lv_color_hex(0x070A10)
 
 typedef struct {                        /* one orbiting particle       */
     lv_obj_t *obj;
@@ -472,33 +471,22 @@ typedef struct {                        /* one selectable planet       */
 typedef struct {
     const char *name;
     const char *sub;
-    const char *glyph;
     uint32_t tint;
-    const char *chip_val[3];
-    const char *chip_lab[3];
 } vd_item_t;
 
 typedef struct {
     lv_obj_t *field;                    /* static galaxy background     */
     lv_obj_t *hole;                     /* core, drawn above the planets */
-    lv_obj_t *panel;
-    lv_obj_t *idx;
-    lv_obj_t *name;
-    lv_obj_t *sub;
-    lv_obj_t *cards;
-    lv_obj_t *hero;
-    lv_obj_t *hero_glyph;
-    lv_obj_t *chip[3];
-    lv_obj_t *chip_val[3];
-    lv_obj_t *chip_lab[3];
-    lv_obj_t *foot;
+    lv_obj_t *header;                   /* name of the selected planet  */
+    lv_obj_t *subtitle;
+    lv_obj_t *dots_box;
+    lv_obj_t *dots[VD_COUNT];
 
     vd_planet_t planets[VD_COUNT];      /* the menu items on the ring  */
     vd_part_t parts[VD_PARTS];          /* the particle system         */
 
     int32_t w, h;                       /* page size                   */
     int32_t fw, fh;                     /* field size                  */
-    int32_t pw;                         /* detail column width         */
     int32_t cx, cy;                     /* black hole centre in field  */
     int32_t rdisk;                      /* orbit radius                */
     int32_t rcore;                      /* black hole core radius      */
@@ -509,8 +497,6 @@ typedef struct {
     int active;                         /* index of the focused item   */
     bool dragging;
     float drag_dist;                    /* finger travel, tap/roll test */
-    float storm;                        /* detail-card slide amount    */
-    int32_t storm_dir;
     float t;                            /* animation clock, seconds    */
 
     struct {                            /* static background stars     */
@@ -524,22 +510,14 @@ typedef struct {
 static vd_ctx_t s_vd;
 
 static const vd_item_t vd_items[VD_COUNT] = {
-    {"HORIZON", "last stable orbit", LV_SYMBOL_EYE_OPEN, 0xF4B860,
-     {"1.5R", "DEV", "01"}, {"STBL", "ORB", "IN"}},
-    {"PHOTON", "light at the edge", LV_SYMBOL_LOOP, 0xFFD27A,
-     {"2.6R", "SPIN", "07"}, {"RING", "ORB", "OUT"}},
-    {"ACCRETION", "hot matter inflow", LV_SYMBOL_REFRESH, 0xFF7A2F,
-     {"3800", "FLOW", "04"}, {"DISK", "HOT", "IN"}},
-    {"RELIC", "deep field fragment", LV_SYMBOL_SD_CARD, 0x8AA4FF,
-     {"42%", "FIND", "OR"}, {"ARTE", "OLD", "IN"}},
-    {"SINGULAR", "no return beyond", LV_SYMBOL_WARNING, 0xFF5470,
-     {"0.0", "TIME", "00"}, {"EVENT", "HARD", "IN"}},
-    {"QUASAR", "bright core jet", LV_SYMBOL_PLAY, 0x62C6FF,
-     {"1e9", "LUM", "PK"}, {"JET", "AXIS", "OUT"}},
-    {"HALO", "ionised corona", LV_SYMBOL_EYE_OPEN, 0x9BE7C4,
-     {"0.8", "EXT", "WD"}, {"GAS", "THIN", "IN"}},
-    {"ESCAPE", "leave the pull", LV_SYMBOL_UPLOAD, 0xB18CFF,
-     {"3.2", "DLT", "GN"}, {"SAFE", "OUT", "OUT"}},
+    {"HORIZON", "last stable orbit", 0xF4B860},
+    {"PHOTON", "light at the edge", 0xFFD27A},
+    {"ACCRETION", "hot matter inflow", 0xFF7A2F},
+    {"RELIC", "deep field fragment", 0x8AA4FF},
+    {"SINGULAR", "no return beyond", 0xFF5470},
+    {"QUASAR", "bright core jet", 0x62C6FF},
+    {"HALO", "ionised corona", 0x9BE7C4},
+    {"ESCAPE", "leave the pull", 0xB18CFF},
 };
 
 /* ---- drawing ------------------------------------------------------ */
@@ -647,22 +625,16 @@ static void vd_apply_item(int index)
 {
     const vd_item_t *it = &vd_items[index];
 
-    lv_label_set_text_fmt(s_vd.idx, "%02d / %02d", index + 1, VD_COUNT);
-    lv_label_set_text(s_vd.name, it->name);
-    lv_label_set_text(s_vd.sub, it->sub);
-    lv_label_set_text(s_vd.hero_glyph, it->glyph);
-    lv_obj_set_style_bg_color(s_vd.hero, ui_fade(lv_color_hex(it->tint),
-                                                 lv_color_black(), 0.30f),
-                              LV_PART_MAIN);
-    lv_obj_set_style_bg_grad_color(s_vd.hero, ui_fade(lv_color_hex(it->tint),
-                                                      lv_color_black(), 0.72f),
-                                   LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_vd.hero_glyph, lv_color_white(),
-                                LV_PART_MAIN);
+    lv_label_set_text(s_vd.header, it->name);
+    lv_label_set_text(s_vd.subtitle, it->sub);
 
-    for (unsigned c = 0; c < 3; c++) {
-        lv_label_set_text(s_vd.chip_val[c], it->chip_val[c]);
-        lv_label_set_text(s_vd.chip_lab[c], it->chip_lab[c]);
+    for (unsigned i = 0; i < VD_COUNT; i++) {
+        const bool on = (i == (unsigned)index);
+        lv_obj_set_size(s_vd.dots[i], on ? 6 : 4, 4);
+        lv_obj_set_style_bg_color(s_vd.dots[i],
+                                  on ? lv_color_hex(it->tint)
+                                     : lv_color_hex(0x3A3F4A),
+                                  LV_PART_MAIN);
     }
 }
 
@@ -806,25 +778,20 @@ static void vd_layout(void)
     s_vd.w = w;
     s_vd.h = h;
 
-    const int32_t pw = (w * 36) / 100;
-    if (pw == s_vd.pw && s_vd.fw == w - pw && s_vd.fh == h &&
-        s_vd.rdisk > 0) {
+    if (s_vd.fw == w && s_vd.fh == h && s_vd.rdisk > 0) {
         return;                         /* nothing changed              */
     }
-    s_vd.pw = pw;
-    s_vd.fw = w - pw;
+    s_vd.fw = w;
     s_vd.fh = h;
 
     lv_obj_set_pos(s_vd.field, 0, 0);
-    lv_obj_set_size(s_vd.field, s_vd.fw, s_vd.fh);
+    lv_obj_set_size(s_vd.field, w, h);
 
-    lv_obj_set_pos(s_vd.panel, s_vd.fw, 0);
-    lv_obj_set_size(s_vd.panel, pw, h);
+    s_vd.cx = w / 2;
+    s_vd.cy = h / 2 + (h / 14);
 
-    s_vd.cx = s_vd.fw / 2;
-    s_vd.cy = h / 2 + 2;
-    int32_t min = (s_vd.fw < h) ? s_vd.fw : h;
-    s_vd.rdisk = (min * 40) / 100;
+    int32_t min = (w < h) ? w : h;
+    s_vd.rdisk = (min * 42) / 100;
     s_vd.rcore = s_vd.rdisk / 4;
     if (s_vd.rcore < 9) {
         s_vd.rcore = 9;
@@ -834,37 +801,18 @@ static void vd_layout(void)
     lv_obj_set_size(s_vd.hole, hs, hs);
     lv_obj_set_pos(s_vd.hole, s_vd.cx - hs / 2, s_vd.cy - hs / 2);
 
-    /* Detail column. */
-    const int32_t pad = 5;
-    const int32_t inner = pw - 2 * pad;
-    lv_obj_set_pos(s_vd.idx, pad, 4);
-    lv_obj_set_size(s_vd.idx, inner, 14);
-    lv_obj_set_pos(s_vd.name, pad, 16);
-    lv_obj_set_size(s_vd.name, inner, 20);
-    lv_obj_set_pos(s_vd.sub, pad, 36);
-    lv_obj_set_size(s_vd.sub, inner, 12);
+    /* Header: the selected planet is named on top, like the coverflow. */
+    lv_obj_set_pos(s_vd.header, 0, 3);
+    lv_obj_set_size(s_vd.header, w, 16);
+    lv_obj_set_pos(s_vd.subtitle, 0, 19);
+    lv_obj_set_size(s_vd.subtitle, w, 12);
 
-    const int32_t cards_y = 52;
-    lv_obj_set_pos(s_vd.cards, pad, cards_y);
-    lv_obj_set_size(s_vd.cards, inner, h - cards_y - 16);
-
-    lv_obj_set_pos(s_vd.hero, 0, 0);
-    lv_obj_set_size(s_vd.hero, inner, 42);
-    lv_obj_set_pos(s_vd.hero_glyph, inner / 2 - 8, 13);
-
-    const int32_t chip_gap = 3;
-    const int32_t chip_w = (inner - 2 * chip_gap) / 3;
-    const int32_t chip_y = 46;
-    for (unsigned c = 0; c < 3; c++) {
-        lv_obj_t *chip = s_vd.chip[c];
-        lv_obj_set_pos(chip, (int32_t)c * (chip_w + chip_gap), chip_y);
-        lv_obj_set_size(chip, chip_w, 28);
-        lv_obj_set_pos(s_vd.chip_val[c], 2, 3);
-        lv_obj_set_pos(s_vd.chip_lab[c], 2, 16);
+    const int32_t dots_w = (int32_t)VD_COUNT * 7;
+    lv_obj_set_pos(s_vd.dots_box, s_vd.cx - dots_w / 2, h - 14);
+    lv_obj_set_size(s_vd.dots_box, dots_w, 8);
+    for (unsigned i = 0; i < VD_COUNT; i++) {
+        lv_obj_set_pos(s_vd.dots[i], (int32_t)i * 7 + 2, 2);
     }
-
-    lv_obj_set_pos(s_vd.foot, pad, h - 14);
-    lv_obj_set_size(s_vd.foot, inner, 12);
 
     /* Background stars are laid out in field coordinates. */
     for (unsigned i = 0; i < VD_FIELD_STARS; i++) {
@@ -918,16 +866,6 @@ static void vd_tick(lv_timer_t *timer)
             s_vd.vel = 0.0f;
             s_vd.pos = (float)s_vd.target;
         }
-    }
-
-    if (s_vd.storm > 0.0f) {
-        s_vd.storm *= 0.77f;
-        if (s_vd.storm < 0.02f) {
-            s_vd.storm = 0.0f;
-        }
-        lv_obj_set_style_translate_x(s_vd.cards,
-                                     (int32_t)(s_vd.storm_dir * 42 * s_vd.storm),
-                                     LV_PART_MAIN);
     }
 
     vd_place_planets();
@@ -985,10 +923,6 @@ static void vd_press_cb(lv_event_t *event)
                 dest = lroundf(s_vd.pos);
             }
             s_vd.target = (int)dest;
-
-            const float delta = ui_ring_delta(dest - s_vd.pos, VD_COUNT);
-            s_vd.storm_dir = (delta < 0.0f) ? 1 : -1;
-            s_vd.storm = (fabsf(delta) > 0.05f) ? 1.0f : 0.0f;
             break;
         }
 
@@ -1013,8 +947,6 @@ static void vd_planet_cb(lv_event_t *event)
                        ui_ring_delta((float)index - s_vd.pos, VD_COUNT);
     s_vd.target = (int)lroundf(dest);
     s_vd.vel = 0.0f;
-    s_vd.storm_dir = (dest < s_vd.pos) ? 1 : -1;
-    s_vd.storm = 1.0f;
 }
 
 static lv_obj_t *vd_planet_create(lv_obj_t *page, int index)
@@ -1040,21 +972,6 @@ static lv_obj_t *vd_planet_create(lv_obj_t *page, int index)
     lv_obj_add_flag(obj, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_add_event_cb(obj, vd_planet_cb, LV_EVENT_CLICKED,
                         (void *)(intptr_t)index);
-    return obj;
-}
-
-static lv_obj_t *vd_box_create(lv_obj_t *parent, lv_color_t bg)
-{
-    lv_obj_t *obj = lv_obj_create(parent);
-    lv_obj_remove_style_all(obj);
-    lv_obj_set_scrollable(obj, false);
-    lv_obj_set_clickable(obj, false);
-    lv_obj_set_style_bg_color(obj, bg, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_radius(obj, WIN_PX(4), LV_PART_MAIN);
-    lv_obj_set_style_border_width(obj, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(obj, lv_color_hex(0x2A3244), LV_PART_MAIN);
-    lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
     return obj;
 }
 
@@ -1125,55 +1042,31 @@ static void vd_create(lv_obj_t *page)
     lv_obj_set_clickable(s_vd.hole, false);
     lv_obj_add_event_cb(s_vd.hole, vd_draw_hole, LV_EVENT_DRAW_MAIN, NULL);
 
-    /* Detail column. */
-    s_vd.panel = lv_obj_create(page);
-    lv_obj_remove_style_all(s_vd.panel);
-    lv_obj_set_scrollable(s_vd.panel, false);
-    lv_obj_set_style_bg_color(s_vd.panel, VD_PANEL, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_vd.panel, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_vd.panel, 0, LV_PART_MAIN);
+    /* Header: the planet the user is on, like the coverflow tab. */
+    s_vd.header = vd_label(page, WIN_FONT_SMALL, VD_TEXT, LV_TEXT_ALIGN_CENTER);
+    s_vd.subtitle = vd_label(page, WIN_FONT_TINY, VD_MUTED,
+                             LV_TEXT_ALIGN_CENTER);
 
-    s_vd.idx = vd_label(s_vd.panel, WIN_FONT_SMALL, VD_GOLD,
-                        LV_TEXT_ALIGN_LEFT);
-    lv_label_set_text_fmt(s_vd.idx, "%02d / %02d", 1, VD_COUNT);
-    s_vd.name = vd_label(s_vd.panel, WIN_FONT_LARGE, VD_TEXT,
-                         LV_TEXT_ALIGN_LEFT);
-    lv_label_set_long_mode(s_vd.name, LV_LABEL_LONG_DOT);
-    s_vd.sub = vd_label(s_vd.panel, WIN_FONT_TINY, VD_MUTED,
-                        LV_TEXT_ALIGN_LEFT);
-
-    s_vd.cards = lv_obj_create(s_vd.panel);
-    lv_obj_remove_style_all(s_vd.cards);
-    lv_obj_set_scrollable(s_vd.cards, false);
-    lv_obj_set_clickable(s_vd.cards, false);
-
-    s_vd.hero = vd_box_create(s_vd.cards, lv_color_hex(0x2A1B08));
-    lv_obj_set_style_bg_grad_color(s_vd.hero,
-                                   ui_fade(lv_color_hex(vd_items[0].tint),
-                                           lv_color_black(), 0.72f),
-                                   LV_PART_MAIN);
-    lv_obj_set_style_bg_grad_dir(s_vd.hero, LV_GRAD_DIR_VER, LV_PART_MAIN);
-    s_vd.hero_glyph = vd_label(s_vd.hero, WIN_FONT_LARGE, lv_color_white(),
-                               LV_TEXT_ALIGN_LEFT);
-    lv_label_set_text(s_vd.hero_glyph, vd_items[0].glyph);
-
-    for (unsigned c = 0; c < 3; c++) {
-        s_vd.chip[c] = vd_box_create(s_vd.cards, lv_color_hex(0x0C1018));
-        s_vd.chip_val[c] = vd_label(s_vd.chip[c], WIN_FONT_SMALL, VD_TEXT,
-                                    LV_TEXT_ALIGN_LEFT);
-        s_vd.chip_lab[c] = vd_label(s_vd.chip[c], WIN_FONT_TINY, VD_MUTED,
-                                    LV_TEXT_ALIGN_LEFT);
+    s_vd.dots_box = lv_obj_create(page);
+    lv_obj_remove_style_all(s_vd.dots_box);
+    lv_obj_set_scrollable(s_vd.dots_box, false);
+    lv_obj_set_clickable(s_vd.dots_box, false);
+    for (unsigned i = 0; i < VD_COUNT; i++) {
+        lv_obj_t *dot = lv_obj_create(s_vd.dots_box);
+        lv_obj_remove_style_all(dot);
+        lv_obj_set_scrollable(dot, false);
+        lv_obj_set_clickable(dot, false);
+        lv_obj_set_size(dot, 4, 4);
+        lv_obj_set_style_radius(dot, LV_PCT(50), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(dot, lv_color_hex(0x3A3F4A), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, LV_PART_MAIN);
+        s_vd.dots[i] = dot;
     }
-
-    s_vd.foot = vd_label(s_vd.panel, WIN_FONT_TINY, VD_MUTED,
-                         LV_TEXT_ALIGN_LEFT);
-    lv_label_set_text(s_vd.foot, "DRAG / TAP");
 
     s_vd.target = 0;
     s_vd.active = 0;
     s_vd.pos = 0.0f;
     s_vd.vel = 0.0f;
-    s_vd.storm = 0.0f;
     s_vd.t = 0.0f;
     vd_apply_item(0);
 
@@ -1208,10 +1101,12 @@ static void vd_stop(void)
 
 #define SK_COUNT        8
 #define SK_DUST         26
-#define SK_W0           WIN_PX(94)
-#define SK_H0           WIN_PX(132)
-#define SK_R            210
-#define SK_STEP         0.30f
+#define SK_W0           WIN_PX(88)
+#define SK_H0           WIN_PX(124)
+#define SK_R            215             /* horizontal arc radius        */
+#define SK_RV           62              /* vertical arc radius          */
+#define SK_STEP         0.44f           /* arc between two cards        */
+#define SK_TILT         420.0f          /* rad -> 0.1 deg, fanned cards */
 
 #define SK_BG           lv_color_hex(0x050506)
 #define SK_ORANGE       lv_color_hex(0xFF7A18)
@@ -1227,6 +1122,7 @@ typedef struct {
     lv_obj_t *num;
     int32_t w, h;
     int32_t x, y;
+    int32_t rot;                        /* cache for the fan angle      */
     int style_state;                    /* cache for colour updates     */
 } sk_card_t;
 
@@ -1247,10 +1143,10 @@ typedef struct {
     int target;
     int active;
     bool dragging;
-    float t;
+    float drag_dist;
 
     struct {
-        float x, y, z, phase;
+        float x, y, z;
     } dust[SK_DUST];
 } sk_ctx_t;
 
@@ -1284,26 +1180,18 @@ static void sk_draw_cb(lv_event_t *event)
     const int32_t oy = base.y1;
     const sk_ctx_t *sk = &s_sk;
 
-    /* Dust field with a little parallax: the deeper the dust, the more it
-     * slides with the menu. */
+    /* Static dust field: it never moves or twinkles, so the page below the
+     * cards only has to be redrawn when the layout changes. */
     for (unsigned i = 0; i < SK_DUST; i++) {
-        float x = sk->dust[i].x + sk->pos * 7.0f * sk->dust[i].z;
-        x = fmodf(x, (float)sk->w);
-        if (x < 0.0f) {
-            x += (float)sk->w;
-        }
-        const float tw = 0.5f + 0.5f * sinf(sk->t * 0.6f + sk->dust[i].phase);
-        const lv_opa_t opa = (lv_opa_t)(30 + 70 * tw);
-
         lv_draw_rect_dsc_t dsc;
         lv_draw_rect_dsc_init(&dsc);
         dsc.bg_color = lv_color_hex(0xAAB4C8);
-        dsc.bg_opa = opa;
+        dsc.bg_opa = (lv_opa_t)(34 + 46 * sk->dust[i].z);
         dsc.radius = LV_RADIUS_CIRCLE;
 
         const int32_t d = (sk->dust[i].z > 0.75f) ? 2 : 1;
         lv_area_t a;
-        a.x1 = ox + (int32_t)x;
+        a.x1 = ox + (int32_t)sk->dust[i].x;
         a.y1 = oy + (int32_t)sk->dust[i].y;
         a.x2 = a.x1 + d;
         a.y2 = a.y1 + d;
@@ -1404,7 +1292,6 @@ static void sk_layout(void)
         s_sk.dust[i].x = ui_rand01() * (float)w;
         s_sk.dust[i].y = 10.0f + ui_rand01() * (float)(h - 20);
         s_sk.dust[i].z = 0.2f + ui_rand01() * 0.8f;
-        s_sk.dust[i].phase = ui_rand01() * 6.28f;
     }
 
     lv_obj_invalidate(s_sk.field);
@@ -1420,26 +1307,22 @@ static void sk_place_cards(void)
         const float rel = ui_ring_delta((float)i - s_sk.pos, SK_COUNT);
         const float dist = fabsf(rel);
 
-        float scale = 1.0f - 0.17f * dist;
-        if (scale < 0.42f) {
-            scale = 0.42f;
+        float scale = 1.0f - 0.26f * dist;
+        if (scale < 0.40f) {
+            scale = 0.40f;
         }
-        /* Fade the depth the same way the original coverflow does. */
-        if (dist > 3.0f) {
+        /* Only the middle and the first pair on each side stay on screen. */
+        if (dist > 2.15f) {
             scale = 0.0f;
         }
 
         const int32_t cw = (int32_t)(SK_W0 * scale);
         const int32_t ch = (int32_t)(SK_H0 * scale);
         if (cw <= 0 || ch <= 0) {
-            if (!lv_obj_has_flag(c->card, LV_OBJ_FLAG_HIDDEN)) {
-                lv_obj_add_flag(c->card, LV_OBJ_FLAG_HIDDEN);
-            }
+            lv_obj_set_hidden(c->card, true);
             continue;
         }
-        if (lv_obj_has_flag(c->card, LV_OBJ_FLAG_HIDDEN)) {
-            lv_obj_remove_flag(c->card, LV_OBJ_FLAG_HIDDEN);
-        }
+        lv_obj_set_hidden(c->card, false);
 
         if (cw != c->w || ch != c->h) {
             c->w = cw;
@@ -1456,11 +1339,19 @@ static void sk_place_cards(void)
         const float arc = rel * SK_STEP;
         const int32_t x = s_sk.cx + (int32_t)(sinf(arc) * (float)SK_R) - cw / 2;
         const int32_t y = s_sk.cy +
-                          (int32_t)((1.0f - cosf(arc)) * (float)SK_R) - ch / 2;
+                          (int32_t)((1.0f - cosf(arc)) * (float)SK_RV) - ch / 2;
         if (x != c->x || y != c->y) {
             c->x = x;
             c->y = y;
             lv_obj_set_pos(c->card, x, y);
+        }
+
+        /* Fan the side cards outwards a little. The front card stays flat,
+         * so it never needs a transform layer. */
+        const int32_t rot = (int32_t)(arc * SK_TILT);
+        if (rot != c->rot) {
+            c->rot = rot;
+            lv_obj_set_style_transform_rotation(c->card, rot, LV_PART_MAIN);
         }
 
         sk_apply_style(c, dist);
@@ -1479,7 +1370,6 @@ static void sk_tick(lv_timer_t *timer)
     }
 
     const float dt = 0.033f;
-    s_sk.t += dt;
 
     bool moving = s_sk.dragging;
 
@@ -1500,7 +1390,6 @@ static void sk_tick(lv_timer_t *timer)
 
     if (moving) {
         sk_place_cards();
-        lv_obj_invalidate(s_sk.field);
     }
 
     const int active = ((int)lroundf(s_sk.pos) % SK_COUNT + SK_COUNT) % SK_COUNT;
@@ -1509,6 +1398,7 @@ static void sk_tick(lv_timer_t *timer)
         lv_label_set_text(s_sk.header, sk_items[active].name);
         lv_label_set_text(s_sk.subtitle, sk_items[active].sub);
         lv_label_set_text(s_sk.cards[active].name, sk_items[active].name);
+        lv_obj_move_foreground(s_sk.cards[active].card);
         for (unsigned i = 0; i < SK_COUNT; i++) {
             const bool on = (i == (unsigned)active);
             lv_obj_set_size(s_sk.dots[i], on ? 6 : 4, 4);
@@ -1524,6 +1414,7 @@ static void sk_press_cb(lv_event_t *event)
     switch (lv_event_get_code(event)) {
         case LV_EVENT_PRESSED:
             s_sk.dragging = true;
+            s_sk.drag_dist = 0.0f;
             s_sk.vel = 0.0f;
             break;
 
@@ -1538,6 +1429,8 @@ static void sk_press_cb(lv_event_t *event)
                 break;
             }
 
+            s_sk.drag_dist += fabsf((float)vect.x);
+
             /* One card pitch of travel moves the coverflow by one card.
              * The cards follow the finger immediately instead of waiting
              * for the next timer tick. */
@@ -1546,7 +1439,6 @@ static void sk_press_cb(lv_event_t *event)
             s_sk.vel = s_sk.vel * 0.6f -
                        ((float)vect.x * gain / 0.033f) * 0.4f;
             sk_place_cards();
-            lv_obj_invalidate(s_sk.field);
             break;
         }
 
@@ -1578,6 +1470,11 @@ static void sk_card_cb(lv_event_t *event)
 {
     sk_card_t *c = (sk_card_t *)lv_event_get_user_data(event);
 
+    /* A press that turned into a drag must not also select the card. */
+    if (s_sk.drag_dist > 10.0f) {
+        return;
+    }
+
     /* Tapping a side card brings it to the front, by the short way round. */
     for (unsigned i = 0; i < SK_COUNT; i++) {
         if (&s_sk.cards[i] == c && (int)i != s_sk.active) {
@@ -1603,6 +1500,12 @@ static lv_obj_t *sk_card_create(lv_obj_t *page, unsigned index)
     lv_obj_set_style_border_color(c->card, lv_color_hex(0x555A64),
                                   LV_PART_MAIN);
     lv_obj_set_style_pad_all(c->card, 0, LV_PART_MAIN);
+    /* Rotate around the middle of the card. */
+    lv_obj_set_style_transform_pivot_x(c->card, LV_PCT(50), LV_PART_MAIN);
+    lv_obj_set_style_transform_pivot_y(c->card, LV_PCT(50), LV_PART_MAIN);
+    /* A drag that starts on a card still scrolls the coverflow. */
+    lv_obj_add_flag(c->card, LV_OBJ_FLAG_EVENT_BUBBLE);
+    c->rot = 0;
     c->style_state = -1;
 
     c->num = lv_label_create(c->card);
@@ -1700,7 +1603,7 @@ static void sk_create(lv_obj_t *page)
     s_sk.active = 0;
     s_sk.pos = 0.0f;
     s_sk.vel = 0.0f;
-    s_sk.t = 0.0f;
+    s_sk.drag_dist = 0.0f;
 
     lv_obj_add_event_cb(page, sk_size_cb, LV_EVENT_SIZE_CHANGED, NULL);
     sk_layout();

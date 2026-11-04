@@ -1,5 +1,7 @@
 # ESP32-S3 Windows 11 Desktop (LVGL 9.6)
 
+![Demo](http://suijunqiang.top:10000/img/lvgl/esp32320240.gif)
+
 A Windows 11 style desktop running on an ESP32-S3 with an ILI9341 320×240
 SPI panel and an XPT2046 touch controller. The UI is built with LVGL 9 and
 runs inside a dedicated FreeRTOS task; Wi-Fi, SNTP and MQTT run independently
@@ -7,14 +9,36 @@ so the render loop is never blocked by the network.
 
 ## Features
 
-- Windows 11 desktop: gradient wallpaper, desktop icons, Explorer/Photos/
-  Terminal/Notepad tiles, Start menu overlay, taskbar with Start button,
-  running apps, tray (Wi-Fi/MQTT state, clock) and weather widget.
+**Windows 11 desktop**
+- Gradient wallpaper, draggable desktop icons, Explorer / Photos / Terminal /
+  Notepad tiles.
+- Start menu overlay, taskbar with Start button and running-app chips,
+  notifications tray (Wi-Fi / MQTT state, clock) and weather widget.
+- Multi-window manager with open / hide / show / close lifecycle.
+
+**Apps page — a left-tab LVGL tabview with three interactive pages**
+
+1. **Honeycomb watch (tab 1).** A circular grid of app tiles that rotates
+   like a watch bezel. Flick gestures continue spinning with inertia; the
+   centre tile is always the active app and can be tapped to launch.
+2. **Warmhole galaxy (tab 2).** A particle-driven galaxy with a black hole
+   core, orbiting planets and gold / blue inflow particles. Drag the ring
+   left or right, or tap a planet — the selected planet's name and subtitle
+   appear at the top and the gold dot highlights it at the bottom.
+3. **Silk coverflow (tab 3).** A fanned coverflow of 8 menu cards (Music,
+   Photos, Chat, Home, Map, Store, Battery, Settings) arranged on a
+   horizontal arc with vertical falloff and outward-angled side cards.
+   Scrolling is smooth, drags start inside the cards, and tap-to-select
+   snaps to the new front card.
+
+**Infrastructure**
 - Touch input with calibrated XPT2046 mapping.
 - Wi-Fi station + SNTP time sync (`Asia/Shanghai`).
 - MQTT: status heartbeat every 10 s, remote command topic.
 - On-demand LVGL screenshot streamed over UART as PPM6.
-- View/window manager with a full view lifecycle.
+- View/window manager with a full six-phase lifecycle
+  (`init`/`open`/`pause`/`resume`/`close`/`deinit`) so hidden views release
+  RAM and stop their animations.
 
 ## Hardware
 
@@ -47,9 +71,15 @@ main/
     ui_manager.c/.h   view stack + lifecycle engine (framework, view agnostic)
     ui_views.c/.h     view ids, ui_view_t descriptor, registry
     ui_page_base.c/.h shared page container + default lifecycle helpers
-    win/              Windows 11 views, widgets, icons and theme
+    win/
+      ui_win_desktop.c/.h   desktop root: wallpaper, icons, start menu, taskbar
+      ui_win_app_ui.c/.h    Apps tabview: honeycomb / galaxy / silk coverflow
+      ui_win_start.c/.h     Start menu overlay
+      ui_win_widgets.c/.h   reusable widgets (title bar, buttons, chips, tray)
+      ui_win_icons.c/.h     1-bit icon assets
+      ui_win_theme.h        colour palette, spacing, fonts
 tools/
-  capture_screenshot.py  host-side UART capture tool
+  capture_screenshot.py     host-side UART capture tool
 ```
 
 ### View lifecycle
@@ -77,6 +107,11 @@ The root view is `VIEW_WIN_DESKTOP`; boot calls
 `ui_views_register_all()` then `ui_manager_init_with(VIEW_WIN_DESKTOP)`.
 Adding a view means one `UI_VIEW_DECLARE()` in `ui_views.h` and one
 `UI_VIEW_DESC()` line in `ui_views.c`.
+
+Window instances inside the desktop follow the same contract: each app has
+a small vtable (`open`/`show`/`hide`/`close`) wired to the underlying view
+callbacks, so launching and minimising a window correctly starts and stops
+its animation timers.
 
 ## Prerequisites
 
