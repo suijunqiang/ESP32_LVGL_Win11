@@ -27,6 +27,7 @@
  * technique the honeycomb already uses.
  */
 
+#include "lv_i18n.h"
 #include "ui_win_app_ui.h"
 #include "ui_win_theme.h"
 
@@ -510,14 +511,14 @@ typedef struct {
 static vd_ctx_t s_vd;
 
 static const vd_item_t vd_items[VD_COUNT] = {
-    {"HORIZON", "last stable orbit", 0xF4B860},
-    {"PHOTON", "light at the edge", 0xFFD27A},
-    {"ACCRETION", "hot matter inflow", 0xFF7A2F},
-    {"RELIC", "deep field fragment", 0x8AA4FF},
-    {"SINGULAR", "no return beyond", 0xFF5470},
-    {"QUASAR", "bright core jet", 0x62C6FF},
-    {"HALO", "ionised corona", 0x9BE7C4},
-    {"ESCAPE", "leave the pull", 0xB18CFF},
+    {"planet_horizon", "planet_horizon_sub", 0xF4B860},
+    {"planet_inner", "planet_inner_sub", 0xFFD27A},
+    {"planet_ember", "planet_ember_sub", 0xFF7A2F},
+    {"planet_glyph", "planet_glyph_sub", 0x8AA4FF},
+    {"planet_moss", "planet_moss_sub", 0xFF5470},
+    {"planet_void", "planet_void_sub", 0x62C6FF},
+    {"planet_ember2", "planet_ember2_sub", 0x9BE7C4},
+    {"planet_horizon2", "planet_horizon2_sub", 0xB18CFF},
 };
 
 /* ---- drawing ------------------------------------------------------ */
@@ -625,8 +626,8 @@ static void vd_apply_item(int index)
 {
     const vd_item_t *it = &vd_items[index];
 
-    lv_label_set_text(s_vd.header, it->name);
-    lv_label_set_text(s_vd.subtitle, it->sub);
+    lv_label_set_text(s_vd.header, _(it->name));
+    lv_label_set_text(s_vd.subtitle, _(it->sub));
 
     for (unsigned i = 0; i < VD_COUNT; i++) {
         const bool on = (i == (unsigned)index);
@@ -1158,14 +1159,14 @@ static const struct {
     const char *glyph;
     uint32_t tint;
 } sk_items[SK_COUNT] = {
-    {"Music", "Now playing", LV_SYMBOL_AUDIO, 0xFF7A18},
-    {"Photos", "Memories", LV_SYMBOL_IMAGE, 0x5A6470},
-    {"Chat", "Messages", LV_SYMBOL_ENVELOPE, 0x5A6470},
-    {"Home", "Control", LV_SYMBOL_HOME, 0x5A6470},
-    {"Map", "Navigate", LV_SYMBOL_GPS, 0x5A6470},
-    {"Store", "Apps", LV_SYMBOL_DRIVE, 0x5A6470},
-    {"Battery", "Power", LV_SYMBOL_CHARGE, 0x5A6470},
-    {"Settings", "System", LV_SYMBOL_SETTINGS, 0x5A6470},
+    {"item_music", "item_music_sub", LV_SYMBOL_AUDIO, 0xFF7A18},
+    {"item_photos", "item_photos_sub", LV_SYMBOL_IMAGE, 0x5A6470},
+    {"item_chat", "item_chat_sub", LV_SYMBOL_ENVELOPE, 0x5A6470},
+    {"item_home", "item_home_sub", LV_SYMBOL_HOME, 0x5A6470},
+    {"item_map", "item_map_sub", LV_SYMBOL_GPS, 0x5A6470},
+    {"item_store", "item_store_sub", LV_SYMBOL_DRIVE, 0x5A6470},
+    {"item_battery", "item_battery_sub", LV_SYMBOL_CHARGE, 0x5A6470},
+    {"item_settings", "item_settings_sub", LV_SYMBOL_SETTINGS, 0x5A6470},
 };
 
 /* ---- drawing ------------------------------------------------------ */
@@ -1395,9 +1396,9 @@ static void sk_tick(lv_timer_t *timer)
     const int active = ((int)lroundf(s_sk.pos) % SK_COUNT + SK_COUNT) % SK_COUNT;
     if (active != s_sk.active) {
         s_sk.active = active;
-        lv_label_set_text(s_sk.header, sk_items[active].name);
-        lv_label_set_text(s_sk.subtitle, sk_items[active].sub);
-        lv_label_set_text(s_sk.cards[active].name, sk_items[active].name);
+        lv_label_set_text(s_sk.header, _(sk_items[active].name));
+        lv_label_set_text(s_sk.subtitle, _(sk_items[active].sub));
+        lv_label_set_text(s_sk.cards[active].name, _(sk_items[active].name));
         lv_obj_move_foreground(s_sk.cards[active].card);
         for (unsigned i = 0; i < SK_COUNT; i++) {
             const bool on = (i == (unsigned)active);
@@ -1526,7 +1527,7 @@ static lv_obj_t *sk_card_create(lv_obj_t *page, unsigned index)
     lv_obj_set_style_text_color(c->name, SK_TEXT, LV_PART_MAIN);
     lv_obj_set_style_pad_all(c->name, 0, LV_PART_MAIN);
     lv_obj_set_style_text_align(c->name, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_label_set_text(c->name, sk_items[index].name);
+    lv_label_set_text(c->name, _(sk_items[index].name));
     lv_obj_set_style_clip_corner(c->card, true, LV_PART_MAIN);
 
     lv_obj_add_event_cb(c->card, sk_card_cb, LV_EVENT_CLICKED, c);
@@ -1565,7 +1566,7 @@ static void sk_create(lv_obj_t *page)
                                 LV_PART_MAIN);
     lv_obj_set_style_text_color(s_sk.header, SK_TEXT, LV_PART_MAIN);
     lv_obj_set_style_text_font(s_sk.header, WIN_FONT_SMALL, LV_PART_MAIN);
-    lv_label_set_text(s_sk.header, sk_items[0].name);
+    lv_label_set_text(s_sk.header, _(sk_items[0].name));
 
     s_sk.subtitle = lv_label_create(page);
     lv_obj_set_clickable(s_sk.subtitle, false);
@@ -1573,7 +1574,7 @@ static void sk_create(lv_obj_t *page)
                                 LV_PART_MAIN);
     lv_obj_set_style_text_color(s_sk.subtitle, SK_MUTED, LV_PART_MAIN);
     lv_obj_set_style_text_font(s_sk.subtitle, WIN_FONT_TINY, LV_PART_MAIN);
-    lv_label_set_text(s_sk.subtitle, sk_items[0].sub);
+    lv_label_set_text(s_sk.subtitle, _(sk_items[0].sub));
 
     /* Cards are created from the middle outwards so the front card ends up
      * at the top of the z order on the first frame. */

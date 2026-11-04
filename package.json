@@ -1,0 +1,15 @@
+{
+  "name": "esp32s3-lvgl-win11",
+  "version": "1.0.0",
+  "description": "![Demo](http://suijunqiang.top:10000/img/lvgl/esp32320240.gif)",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "lv_i18n": "^0.2.1"
+  }
+}

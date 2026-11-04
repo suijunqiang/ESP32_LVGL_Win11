@@ -7,6 +7,7 @@
  * is wrapped in WIN_PX() so the whole widget set scales as one piece.
  */
 
+#include "lv_i18n.h"
 #include "ui_win_widgets.h"
 
 /* ------------------------------------------------------------------ */
@@ -442,7 +443,7 @@ lv_obj_t *win_window_create(lv_obj_t *parent,
     lv_obj_align(icon, LV_ALIGN_LEFT_MID, 0, 0);
 
     lv_obj_t *label = lv_label_create(title);
-    lv_label_set_text(label, app->label);
+    lv_label_set_text(label, _(app->label));
     lv_obj_set_style_text_color(label, WIN_COLOR_TEXT, LV_PART_MAIN);
     lv_obj_set_style_text_font(label, WIN_FONT_SMALL, LV_PART_MAIN);
 

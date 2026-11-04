@@ -8,6 +8,8 @@
  * proportions. Text uses the one-step-smaller font set of ui_win_theme.h.
  */
 
+#include "lv_i18n.h"
+#include "app_i18n.h"
 #include "ui_win_desktop.h"
 
 #include "../ui_page_base.h"
@@ -46,6 +48,9 @@ static lv_obj_t *s_start_button;
 static lv_obj_t *s_apps_dd;
 static win_app_id_t s_dd_map[WIN_APP_COUNT];
 static unsigned s_dd_map_count;
+
+/* The language dropdown sits right after the Apps dropdown. */
+static lv_obj_t *s_lang_dd;
 
 /* The flex row that holds the system buttons and the Apps dropdown. */
 static lv_obj_t *s_taskbar_center;
@@ -208,7 +213,7 @@ static void win_shortcut_create(lv_obj_t *parent, unsigned index, unsigned rows,
 
     /* The caption under the icon. */
     lv_obj_t *caption = lv_label_create(cell);
-    lv_label_set_text(caption, shortcut->label);
+    lv_label_set_text(caption, _(shortcut->label));
     lv_label_set_long_mode(caption, LV_LABEL_LONG_CLIP);
     lv_obj_set_width(caption, WIN_DESKTOP_COL_W);
     lv_obj_set_style_text_align(caption, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -304,7 +309,7 @@ static void win_apps_dropdown_refresh(void)
                 len += snprintf(buf + len, sizeof(buf) - len, "\n");
             }
             len += snprintf(buf + len, sizeof(buf) - len, "%s%s %s",
-                            mark, app->symbol, app->label);
+                            mark, app->symbol, _(app->label));
             s_dd_map[s_dd_map_count++] = id;
             if (s_dd_map_count >= WIN_APP_COUNT || len >= sizeof(buf) - 20) {
                 break;
@@ -315,10 +320,10 @@ static void win_apps_dropdown_refresh(void)
     lv_dropdown_set_options(s_apps_dd, buf);
 }
 
-/* Dark style for the popup list (it opens on the top layer). */
-static void win_apps_dropdown_style_list(void)
+/* Dark style for a dropdown popup list (it opens on the top layer). */
+static void win_dropdown_style_list(lv_obj_t *dd, const lv_font_t *font)
 {
-    lv_obj_t *list = lv_dropdown_get_list(s_apps_dd);
+    lv_obj_t *list = lv_dropdown_get_list(dd);
     if (list == NULL) {
         return;
     }
@@ -330,7 +335,7 @@ static void win_apps_dropdown_style_list(void)
     lv_obj_set_style_border_opa(list, LV_OPA_50, LV_PART_MAIN);
     lv_obj_set_style_radius(list, WIN_PX(4), LV_PART_MAIN);
     lv_obj_set_style_text_color(list, WIN_COLOR_TEXT, LV_PART_MAIN);
-    lv_obj_set_style_text_font(list, WIN_FONT_SMALL, LV_PART_MAIN);
+    lv_obj_set_style_text_font(list, font, LV_PART_MAIN);
     lv_obj_set_style_bg_color(list, WIN_COLOR_ACCENT, LV_PART_SELECTED);
     lv_obj_set_style_bg_opa(list, LV_OPA_40, LV_PART_SELECTED);
 }
@@ -340,7 +345,7 @@ static void win_apps_dropdown_style_list(void)
 static void win_apps_dropdown_open_cb(lv_event_t *event)
 {
     (void)event;
-    win_apps_dropdown_style_list();
+    win_dropdown_style_list(s_apps_dd, WIN_FONT_SMALL);
 }
 
 static void win_apps_dropdown_cb(lv_event_t *event)
@@ -362,6 +367,52 @@ static void win_apps_dropdown_cb(lv_event_t *event)
         win_window_bring_to_front(window);
     } else {
         win_window_open(id);
+    }
+}
+
+/* Deferred desktop rebuild after a locale switch.
+ *
+ * ui_page_view_close() only hides the page, so it would leave every label
+ * with the old translation. A full deinit/open rebuilds the whole desktop
+ * with the new strings and fonts. The async hop keeps the rebuild out of
+ * the language dropdown's own event callback (the dropdown is deleted by it). */
+static void win_lang_rebuild_async(void *unused)
+{
+    (void)unused;
+
+    ui_win_desktop_deinit();
+    ui_win_desktop_open();
+}
+
+/* Option 0 is English, option 1 is Simplified Chinese. */
+static void win_lang_dropdown_cb(lv_event_t *event)
+{
+    (void)event;
+
+    const char *next = lv_dropdown_get_selected(s_lang_dd) == 1 ? "zh-CN"
+                                                                : "en-US";
+    if (strcmp(app_i18n_current(), next) == 0) {
+        return;                              /* already active */
+    }
+    if (!app_i18n_set_locale(next)) {
+        return;                              /* unknown locale */
+    }
+
+    lv_async_call(win_lang_rebuild_async, NULL);
+}
+
+static void win_lang_dropdown_open_cb(lv_event_t *event)
+{
+    (void)event;
+    /* The language names are always shown in the CJK font: it also carries
+     * Latin glyphs, while Montserrat has no Chinese at all. */
+    win_dropdown_style_list(s_lang_dd, &lv_font_zh_14);
+
+    /* The list is created before we can style it, so pin its width instead of
+     * relying on a content size measured with the default font. */
+    lv_obj_t *list = lv_dropdown_get_list(s_lang_dd);
+    if (list != NULL) {
+        lv_obj_set_width(list, WIN_PX(68));
     }
 }
 
@@ -398,7 +449,7 @@ static void win_taskbar_create(lv_obj_t *parent)
     lv_obj_set_style_text_font(sun, WIN_FONT_SMALL, LV_PART_MAIN);
 
     lv_obj_t *temp = lv_label_create(weather);
-    lv_label_set_text(temp, "22");
+    lv_label_set_text(temp, _("temp_label"));
     lv_obj_set_style_text_color(temp, WIN_COLOR_TEXT, LV_PART_MAIN);
     lv_obj_set_style_text_font(temp, WIN_FONT_SMALL, LV_PART_MAIN);
 
@@ -428,47 +479,13 @@ static void win_taskbar_create(lv_obj_t *parent)
                                      WIN_COLOR_TEXT);
     lv_obj_center(logo);
 
-    /* Search, task view and widgets. */
-    const lv_coord_t system_size = WIN_PX(26);
-    const lv_coord_t system_glyph = WIN_PX(16);
-
-    lv_obj_t *search = lv_button_create(center);
-    lv_obj_set_size(search, system_size, system_size);
-    lv_obj_set_style_bg_opa(search, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(search, 0, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(search, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(search, 0, LV_PART_MAIN);
-
-    lv_obj_t *search_glyph = win_search_glyph_create(search, system_glyph,
-                                                      WIN_COLOR_TEXT);
-    lv_obj_center(search_glyph);
-
-    lv_obj_t *taskview = lv_button_create(center);
-    lv_obj_set_size(taskview, system_size, system_size);
-    lv_obj_set_style_bg_opa(taskview, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(taskview, 0, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(taskview, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(taskview, 0, LV_PART_MAIN);
-
-    lv_obj_t *taskview_glyph = win_taskview_glyph_create(taskview, system_glyph,
-                                                          WIN_COLOR_TEXT);
-    lv_obj_center(taskview_glyph);
-
-    lv_obj_t *widgets = lv_button_create(center);
-    lv_obj_set_size(widgets, system_size, system_size);
-    lv_obj_set_style_bg_opa(widgets, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(widgets, 0, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(widgets, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(widgets, 0, LV_PART_MAIN);
-
-    lv_obj_t *widgets_glyph = win_widgets_glyph_create(widgets, WIN_PX(15),
-                                                        WIN_COLOR_TEXT);
-    lv_obj_center(widgets_glyph);
+    /* Search, task view and widgets were decorative only (they had no click
+     * action), so they are dropped to leave the bar to the working controls. */
 
     /* Every app lives in one dropdown instead of one taskbar button each:
      * the bar stays uncluttered no matter how many windows are open. */
     s_apps_dd = lv_dropdown_create(center);
-    lv_dropdown_set_text_static(s_apps_dd, "Apps");
+    lv_dropdown_set_text_static(s_apps_dd, _("apps"));
     lv_dropdown_set_dir(s_apps_dd, LV_DIR_TOP);
     lv_dropdown_set_symbol(s_apps_dd, NULL);
     lv_obj_set_size(s_apps_dd, WIN_PX(64), WIN_TASKBTN_SIZE);
@@ -487,6 +504,29 @@ static void win_taskbar_create(lv_obj_t *parent)
     lv_obj_add_event_cb(s_apps_dd, win_apps_dropdown_open_cb,
                         LV_EVENT_CLICKED, NULL);
     win_apps_dropdown_refresh();
+
+    /* Language menu, directly after Apps. It opens upward like the app list
+     * and always uses the CJK font, which also carries the Latin glyphs. */
+    s_lang_dd = lv_dropdown_create(center);
+    lv_dropdown_set_options(s_lang_dd, "Eng\n简体");
+    lv_dropdown_set_dir(s_lang_dd, LV_DIR_TOP);
+    lv_obj_set_size(s_lang_dd, LV_SIZE_CONTENT, WIN_TASKBTN_SIZE);
+    lv_obj_set_style_bg_color(s_lang_dd, WIN_COLOR_FIELD, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_lang_dd, LV_OPA_80, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_lang_dd, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_lang_dd, WIN_COLOR_MICA_BORDER,
+                                  LV_PART_MAIN);
+    lv_obj_set_style_border_opa(s_lang_dd, LV_OPA_50, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_lang_dd, WIN_PX(4), LV_PART_MAIN);
+    lv_obj_set_style_pad_hor(s_lang_dd, WIN_PX(6), LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_lang_dd, WIN_COLOR_TEXT, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lang_dd, &lv_font_zh_14, LV_PART_MAIN);
+    lv_dropdown_set_selected(s_lang_dd,
+                             app_i18n_current()[0] == 'z' ? 1 : 0);
+    lv_obj_add_event_cb(s_lang_dd, win_lang_dropdown_cb,
+                        LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(s_lang_dd, win_lang_dropdown_open_cb,
+                        LV_EVENT_CLICKED, NULL);
 
     /* Right: the system tray. */
     lv_obj_t *tray = lv_obj_create(s_taskbar);
@@ -679,10 +719,10 @@ static void win_content_settings(lv_obj_t *content)
                           LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_row(list, WIN_PX(4), LV_PART_MAIN);
 
-    win_settings_row_create(list, "Bluetooth", true);
-    win_settings_row_create(list, "Wi-Fi", true);
-    win_settings_row_create(list, "Night light", false);
-    win_settings_row_create(list, "Airplane mode", false);
+    win_settings_row_create(list, _("bt_label"), true);
+    win_settings_row_create(list, _("wifi_label"), true);
+    win_settings_row_create(list, _("night_light"), false);
+    win_settings_row_create(list, _("airplane_mode"), false);
 }
 
 static void win_content_edge(lv_obj_t *content)
@@ -718,12 +758,12 @@ static void win_content_edge(lv_obj_t *content)
                           LV_FLEX_ALIGN_START);
     lv_obj_set_style_pad_row(page, WIN_PX(6), LV_PART_MAIN);
 
-    lv_obj_t *title = win_content_label(page, "Light and Versatile",
+    lv_obj_t *title = win_content_label(page, _("lvgl_tagline_1"),
                                         WIN_COLOR_TEXT);
     lv_obj_set_style_text_font(title, WIN_FONT_LARGE, LV_PART_MAIN);
 
-    win_content_label(page, "Embedded graphics library", WIN_COLOR_TEXT_DIM);
-    win_content_label(page, "for MCU and MPU", WIN_COLOR_TEXT_DIM);
+    win_content_label(page, _("lvgl_tagline_2"), WIN_COLOR_TEXT_DIM);
+    win_content_label(page, _("lvgl_tagline_3"), WIN_COLOR_TEXT_DIM);
 }
 
 static void win_content_play_cb(lv_event_t *event)
@@ -785,12 +825,12 @@ static void win_content_music(lv_obj_t *content)
     lv_obj_set_style_text_font(note, WIN_FONT_LARGE, LV_PART_MAIN);
     lv_obj_center(note);
 
-    lv_obj_t *title = win_content_label(content, "Windows 11 theme",
+    lv_obj_t *title = win_content_label(content, _("win11_theme"),
                                         WIN_COLOR_TEXT);
     lv_obj_set_pos(title, WIN_PX(54), WIN_PX(5));
     lv_obj_set_style_text_font(title, WIN_FONT_LARGE, LV_PART_MAIN);
 
-    lv_obj_t *artist = win_content_label(content, "Sui Junqiang",
+    lv_obj_t *artist = win_content_label(content, _("user_name"),
                                          WIN_COLOR_TEXT_DIM);
     lv_obj_set_pos(artist, WIN_PX(54), WIN_PX(25));
 
@@ -802,9 +842,9 @@ static void win_content_music(lv_obj_t *content)
     lv_obj_set_style_radius(bar, WIN_PX(2), LV_PART_MAIN);
     lv_bar_set_value(bar, 42, LV_ANIM_OFF);
 
-    lv_obj_t *elapsed = win_content_label(content, "1:12", WIN_COLOR_TEXT_MUTED);
+    lv_obj_t *elapsed = win_content_label(content, _("time_1_12"), WIN_COLOR_TEXT_MUTED);
     lv_obj_set_pos(elapsed, 0, WIN_PX(62));
-    lv_obj_t *duration = win_content_label(content, "3:04", WIN_COLOR_TEXT_MUTED);
+    lv_obj_t *duration = win_content_label(content, _("time_3_04"), WIN_COLOR_TEXT_MUTED);
     lv_obj_align(duration, LV_ALIGN_TOP_RIGHT, 0, WIN_PX(62));
 
     lv_obj_t *controls = lv_obj_create(content);
@@ -933,10 +973,10 @@ static void win_content_store(lv_obj_t *content)
         lv_obj_t *icon = win_app_icon_create(row, app, WIN_PX(18));
         win_style_decoration(icon);
 
-        lv_obj_t *name = win_content_label(row, app->label, WIN_COLOR_TEXT);
+        lv_obj_t *name = win_content_label(row, _(app->label), WIN_COLOR_TEXT);
         lv_obj_set_flex_grow(name, 1);
 
-        lv_obj_t *open = win_content_label(row, "Open", WIN_COLOR_TEXT_MUTED);
+        lv_obj_t *open = win_content_label(row, _("app_open"), WIN_COLOR_TEXT_MUTED);
         lv_obj_set_style_text_opa(open, LV_OPA_80, LV_PART_MAIN);
     }
 }
@@ -944,8 +984,8 @@ static void win_content_store(lv_obj_t *content)
 static void win_content_mail(lv_obj_t *content)
 {
     static const char *mails[] = {
-        "Windows 11 design guide",
-        "Your weekly digest",
+        "digest_1",
+        "digest_2",
     };
 
     lv_obj_t *list = lv_obj_create(content);
@@ -969,7 +1009,7 @@ static void win_content_mail(lv_obj_t *content)
         lv_obj_set_style_pad_all(dot, 0, LV_PART_MAIN);
         win_style_decoration(dot);
 
-        lv_obj_t *subject = win_content_label(row, mails[i], WIN_COLOR_TEXT);
+        lv_obj_t *subject = win_content_label(row, _(mails[i]), WIN_COLOR_TEXT);
         lv_obj_set_flex_grow(subject, 1);
 
         win_content_label(row, "10:24", WIN_COLOR_TEXT_MUTED);
@@ -1125,7 +1165,7 @@ static void win_wifi_refresh_status(void)
         lv_label_set_text_fmt(s_wifi_status, LV_SYMBOL_WIFI " %s  %s  %ddBm",
                                ssid, ip, (int)rssi);
     } else {
-        lv_label_set_text_fmt(s_wifi_status, LV_SYMBOL_CLOSE " not connected");
+        lv_label_set_text_fmt(s_wifi_status, LV_SYMBOL_CLOSE " %s", _("not_connected"));
     }
 }
 
@@ -1173,18 +1213,18 @@ static void win_wifi_scan_cb(lv_event_t *event)
 
     lv_obj_clean(s_wifi_list);
     lv_obj_set_state(btn, LV_STATE_DISABLED, true);
-    lv_label_set_text(label, "...");
+    lv_label_set_text(label, _("placeholder_dotdotdot"));
 
     wifi_ap_t aps[WIFI_SCAN_MAX];
     int count = app_wifi_scan(aps, WIFI_SCAN_MAX);
 
-    lv_label_set_text(label, "Scan");
+    lv_label_set_text(label, _("scan"));
     lv_obj_set_state(btn, LV_STATE_DISABLED, false);
 
     win_wifi_refresh_status();
 
     if (count == 0) {
-        lv_obj_t *empty = win_content_label(s_wifi_list, "no AP",
+        lv_obj_t *empty = win_content_label(s_wifi_list, _("no_ap"),
                                              WIN_COLOR_TEXT_MUTED);
         lv_obj_set_flex_grow(empty, 1);
         return;
@@ -1207,7 +1247,7 @@ static void win_wifi_scan_cb(lv_event_t *event)
         struct wifi_ap_row_ud *ud = malloc(sizeof(*ud));
         if (ud == NULL) continue;
         snprintf(ud->ssid, sizeof(ud->ssid), "%s",
-                 aps[i].ssid[0] ? aps[i].ssid : "(hidden)");
+                 aps[i].ssid[0] ? aps[i].ssid : _("hidden"));
         ud->rssi = aps[i].rssi;
 
         lv_obj_t *holder = lv_obj_create(row);
@@ -1240,7 +1280,7 @@ static void win_wifi_join_cb(lv_event_t *event)
 
     if (ssid == NULL || ssid[0] == '\0') {
         if (s_wifi_status != NULL) {
-            lv_label_set_text(s_wifi_status, LV_SYMBOL_CLOSE " SSID empty");
+            lv_label_set_text_fmt(s_wifi_status, LV_SYMBOL_CLOSE " %s", _("ssid_empty"));
         }
         return;
     }
@@ -1248,9 +1288,12 @@ static void win_wifi_join_cb(lv_event_t *event)
     esp_err_t err = app_wifi_set_credentials(ssid, psk);
     if (err == ESP_OK) {
         if (s_wifi_status != NULL) {
-            lv_label_set_text_fmt(s_wifi_status,
-                                  LV_SYMBOL_WARNING " reconnecting to \"%s\"...",
-                                  ssid);
+            char status[128];
+            snprintf(status, sizeof(status), _("reconnecting"), ssid);
+            char final_buf[160];
+            snprintf(final_buf, sizeof(final_buf),
+                     LV_SYMBOL_WARNING " %s", status);
+            lv_label_set_text(s_wifi_status, final_buf);
         }
         app_wifi_reconnect();
     }
@@ -1287,7 +1330,7 @@ static void win_content_wifi(lv_obj_t *content)
                           LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_column(row1, WIN_PX(4), LV_PART_MAIN);
 
-    lv_obj_t *scan_btn = win_panel_button(row1, "Scan", false, WIN_PX(44));
+    lv_obj_t *scan_btn = win_panel_button(row1, _("scan"), false, WIN_PX(44));
     lv_obj_add_event_cb(scan_btn, win_wifi_scan_cb, LV_EVENT_CLICKED, NULL);
 
     char ssid[WIFI_SSID_MAX] = {0}, psk[WIFI_PSK_MAX] = {0};
@@ -1310,7 +1353,7 @@ static void win_content_wifi(lv_obj_t *content)
     lv_obj_set_flex_grow(s_wifi_psk_ta, 1);
     lv_textarea_set_text(s_wifi_psk_ta, psk);
 
-    lv_obj_t *join_btn = win_panel_button(row2, "Connect", true, WIN_PX(64));
+    lv_obj_t *join_btn = win_panel_button(row2, _("connect"), true, WIN_PX(64));
     lv_obj_add_event_cb(join_btn, win_wifi_join_cb, LV_EVENT_CLICKED, NULL);
 
     /* The scan results list below the rows. */
@@ -1325,7 +1368,7 @@ static void win_content_wifi(lv_obj_t *content)
     lv_obj_set_scrollbar_mode(s_wifi_list, LV_SCROLLBAR_MODE_AUTO);
 
     /* Placeholder row so the area is visible before first scan. */
-    lv_obj_t *ph = win_content_label(s_wifi_list, "press Scan to list APs",
+    lv_obj_t *ph = win_content_label(s_wifi_list, _("press_scan_ap"),
                                       WIN_COLOR_TEXT_MUTED);
     lv_obj_set_flex_grow(ph, 1);
 }
@@ -1345,8 +1388,10 @@ static void win_mqtt_refresh_status(void)
     app_mqtt_get_status(&st);
 
     const char *sym = st.connected ? LV_SYMBOL_WIFI : LV_SYMBOL_CLOSE;
-    lv_label_set_text_fmt(s_mqtt_status, "%s %s (uptime %ds)",
-                           sym, st.uri, st.uptime_s);
+    char up[32];
+    snprintf(up, sizeof(up), _("uptime"), st.uptime_s);
+    lv_label_set_text_fmt(s_mqtt_status, "%s %s (%s)",
+                           sym, st.uri, up);
 }
 
 static void win_mqtt_log_refresh(void)
@@ -1365,7 +1410,7 @@ static void win_mqtt_publish_cb(lv_event_t *event)
     const char *payload = lv_textarea_get_text(s_mqtt_payload_ta);
     int id = app_mqtt_publish(topic ?: "", payload ?: "");
     if (s_mqtt_status != NULL) {
-        lv_label_set_text_fmt(s_mqtt_status, "published #%d to %s",
+        lv_label_set_text_fmt(s_mqtt_status, _("mqtt_published"),
                                id, topic);
     }
     win_mqtt_log_refresh();
@@ -1379,7 +1424,7 @@ static void win_mqtt_subscribe_cb(lv_event_t *event)
     esp_err_t err = app_mqtt_subscribe(topic ?: "");
     if (s_mqtt_status != NULL) {
         lv_label_set_text(s_mqtt_status,
-                          err == ESP_OK ? "subscribed" : "subscribe failed");
+                          err == ESP_OK ? _("mqtt_subscribed") : _("mqtt_sub_fail"));
     }
     win_mqtt_log_refresh();
 }
@@ -1395,7 +1440,7 @@ static void win_mqtt_restart_cb(lv_event_t *event)
     }
 
     if (s_mqtt_status != NULL) {
-        lv_label_set_text(s_mqtt_status, "restarting...");
+        lv_label_set_text(s_mqtt_status, _("mqtt_restarting"));
     }
     app_mqtt_restart();
     win_mqtt_refresh_status();
@@ -1441,7 +1486,7 @@ static void win_content_mqtt(lv_obj_t *content)
                                 LV_PART_MAIN);
     lv_obj_set_style_text_font(s_mqtt_status, WIN_FONT_TINY, LV_PART_MAIN);
 
-    lv_obj_t *restart = win_panel_button(header, "Restart", false, WIN_PX(58));
+    lv_obj_t *restart = win_panel_button(header, _("restart"), false, WIN_PX(58));
     lv_obj_add_event_cb(restart, win_mqtt_restart_cb, LV_EVENT_CLICKED, NULL);
 
     win_mqtt_refresh_status();
@@ -1464,7 +1509,7 @@ static void win_content_mqtt(lv_obj_t *content)
     lv_obj_set_flex_grow(s_mqtt_topic_ta, 1);
     lv_textarea_set_text(s_mqtt_topic_ta, st.topic);
 
-    lv_obj_t *sub = win_panel_button(row3, "Sub", false, WIN_PX(46));
+    lv_obj_t *sub = win_panel_button(row3, _("sub"), false, WIN_PX(46));
     lv_obj_add_event_cb(sub, win_mqtt_subscribe_cb, LV_EVENT_CLICKED, NULL);
 
     /* Row 4: Payload field + Publish button. */
@@ -1480,7 +1525,7 @@ static void win_content_mqtt(lv_obj_t *content)
     lv_obj_set_flex_grow(s_mqtt_payload_ta, 1);
     lv_textarea_set_text(s_mqtt_payload_ta, "{\"hi\":true}");
 
-    lv_obj_t *pub = win_panel_button(row4, "Pub", true, WIN_PX(46));
+    lv_obj_t *pub = win_panel_button(row4, _("pub"), true, WIN_PX(46));
     lv_obj_add_event_cb(pub, win_mqtt_publish_cb, LV_EVENT_CLICKED, NULL);
 
     /* Log area — fills the remaining height. */
@@ -1550,16 +1595,18 @@ static void win_bt_refresh_status(void)
     app_bt_get_status(&st);
 
     if (!st.host_ready) {
-        lv_label_set_text(s_bt_status, LV_SYMBOL_BLUETOOTH " adapter starting");
+        lv_label_set_text_fmt(s_bt_status, LV_SYMBOL_BLUETOOTH " %s", _("bt_starting"));
     } else if (st.connected) {
-        lv_label_set_text_fmt(s_bt_status,
-                              LV_SYMBOL_BLUETOOTH " linked %s", st.peer_addr);
+        char b[128];
+        snprintf(b, sizeof(b), _("bt_linked"), st.peer_addr);
+        lv_label_set_text_fmt(s_bt_status, LV_SYMBOL_BLUETOOTH " %s", b);
     } else {
-        lv_label_set_text_fmt(s_bt_status,
-                              LV_SYMBOL_BLUETOOTH " ready  adv:%s  scan:%s  %u dev",
-                              st.advertising ? "on" : "off",
-                              st.scanning ? "on" : "off",
-                              st.device_count);
+        char b[128];
+        snprintf(b, sizeof(b), _("bt_ready"),
+                 st.advertising ? _("on") : _("off"),
+                 st.scanning ? _("on") : _("off"),
+                 st.device_count);
+        lv_label_set_text_fmt(s_bt_status, LV_SYMBOL_BLUETOOTH " %s", b);
     }
 
     win_bt_style_toggle(s_bt_scan_btn, st.scanning);
@@ -1607,7 +1654,7 @@ static void win_bt_refresh_list(bool force)
 
             for (unsigned i = 0; i < n; i++) {
                 if (strcmp(devs[i].addr, ud->addr) == 0) {
-                    lv_label_set_text_fmt(ud->rssi_lbl, "%d dBm",
+                    lv_label_set_text_fmt(ud->rssi_lbl, _("dbm"),
                                           (int)devs[i].rssi);
                     break;
                 }
@@ -1620,7 +1667,7 @@ static void win_bt_refresh_list(bool force)
     s_bt_seen_count = n;
 
     if (n == 0) {
-        lv_obj_t *empty = win_content_label(s_bt_list, "press Scan to look for devices",
+        lv_obj_t *empty = win_content_label(s_bt_list, _("press_scan_dev"),
                                             WIN_COLOR_TEXT_MUTED);
         lv_label_set_long_mode(empty, LV_LABEL_LONG_DOT);
         lv_obj_set_width(empty, LV_PCT(100));
@@ -1662,7 +1709,7 @@ static void win_bt_refresh_list(bool force)
         lv_obj_set_style_text_font(name, WIN_FONT_TINY, LV_PART_MAIN);
 
         lv_obj_t *rssi = lv_label_create(row);
-        lv_label_set_text_fmt(rssi, "%d dBm", (int)devs[i].rssi);
+        lv_label_set_text_fmt(rssi, _("dbm"), (int)devs[i].rssi);
         lv_obj_set_style_text_color(rssi, WIN_COLOR_TEXT_MUTED, LV_PART_MAIN);
         lv_obj_set_style_text_font(rssi, WIN_FONT_TINY, LV_PART_MAIN);
         ud->rssi_lbl = rssi;
@@ -1679,12 +1726,12 @@ static void win_bt_refresh_gatt(void)
     app_bt_get_status(&st);
 
     if (s_bt_info != NULL) {
-        lv_label_set_text_fmt(s_bt_info, "addr %s\npeer %s",
-                              st.own_addr[0] ? st.own_addr : "---",
-                              st.connected ? st.peer_addr : "not connected");
+        lv_label_set_text_fmt(s_bt_info, _("addr_peer_fmt"),
+                              st.own_addr[0] ? st.own_addr : _("dash"),
+                              st.connected ? st.peer_addr : _("not_connected"));
     }
     if (s_bt_value_lbl != NULL) {
-        lv_label_set_text_fmt(s_bt_value_lbl, "val: %s", st.gatt_value);
+        lv_label_set_text_fmt(s_bt_value_lbl, _("val_label"), st.gatt_value);
     }
 }
 
@@ -1894,9 +1941,9 @@ static void win_content_bt(lv_obj_t *content)
                           LV_FLEX_ALIGN_START);
     lv_obj_set_scrollable(bar, false);
 
-    static const char *tab_names[3] = { "Devices", "GATT", "Log" };
+    static const char *tab_keys_bt[3] = { "devices", "gatt", "log" };
     for (int i = 0; i < 3; i++) {
-        s_bt_tabbtn[i] = win_panel_button(bar, tab_names[i], false, WIN_PX(82));
+        s_bt_tabbtn[i] = win_panel_button(bar, _(tab_keys_bt[i]), false, WIN_PX(82));
         lv_obj_set_height(s_bt_tabbtn[i], WIN_PX(20));
         lv_obj_set_flex_grow(s_bt_tabbtn[i], 1);
         lv_obj_add_event_cb(s_bt_tabbtn[i], win_bt_tab_cb, LV_EVENT_CLICKED,
@@ -1933,16 +1980,16 @@ static void win_content_bt(lv_obj_t *content)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
     lv_obj_set_scrollable(controls, false);
 
-    s_bt_scan_btn = win_panel_button(controls, "Scan", false, WIN_PX(52));
+    s_bt_scan_btn = win_panel_button(controls, _("scan"), false, WIN_PX(52));
     lv_obj_add_event_cb(s_bt_scan_btn, win_bt_scan_cb, LV_EVENT_CLICKED, NULL);
 
-    s_bt_adv_btn = win_panel_button(controls, "Adv", false, WIN_PX(46));
+    s_bt_adv_btn = win_panel_button(controls, _("adv"), false, WIN_PX(46));
     lv_obj_add_event_cb(s_bt_adv_btn, win_bt_adv_cb, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *disc = win_panel_button(controls, "Disc", false, WIN_PX(48));
+    lv_obj_t *disc = win_panel_button(controls, _("disc"), false, WIN_PX(48));
     lv_obj_add_event_cb(disc, win_bt_disc_cb, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *clear = win_panel_button(controls, "Clear", false, WIN_PX(46));
+    lv_obj_t *clear = win_panel_button(controls, _("clear"), false, WIN_PX(46));
     lv_obj_add_event_cb(clear, win_bt_clear_cb, LV_EVENT_CLICKED, NULL);
 
     s_bt_list = lv_obj_create(devices);
@@ -1978,7 +2025,7 @@ static void win_content_bt(lv_obj_t *content)
     lv_obj_set_flex_grow(s_bt_name_ta, 1);
     lv_textarea_set_text(s_bt_name_ta, st.name);
 
-    lv_obj_t *name_set = win_panel_button(name_row, "Set", false, WIN_PX(46));
+    lv_obj_t *name_set = win_panel_button(name_row, _("set"), false, WIN_PX(46));
     lv_obj_add_event_cb(name_set, win_bt_name_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *value_row = lv_obj_create(gatt);
@@ -1996,7 +2043,7 @@ static void win_content_bt(lv_obj_t *content)
     lv_obj_set_flex_grow(s_bt_value_ta, 1);
     lv_textarea_set_text(s_bt_value_ta, st.gatt_value);
 
-    lv_obj_t *value_set = win_panel_button(value_row, "Set", true,
+    lv_obj_t *value_set = win_panel_button(value_row, _("set"), true,
                                            WIN_PX(46));
     lv_obj_add_event_cb(value_set, win_bt_value_cb, LV_EVENT_CLICKED, NULL);
 
@@ -2010,7 +2057,7 @@ static void win_content_bt(lv_obj_t *content)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_scrollable(notify_row, false);
 
-    lv_obj_t *notify = win_panel_button(notify_row, "Notify", false,
+    lv_obj_t *notify = win_panel_button(notify_row, _("notify"), false,
                                         WIN_PX(62));
     lv_obj_add_event_cb(notify, win_bt_notify_cb, LV_EVENT_CLICKED, NULL);
 
@@ -2142,17 +2189,17 @@ static void win_cam_refresh_status(void)
 
         if (!st.inited && !st.test_pattern) {
             lv_label_set_text_fmt(s_cam_status,
-                                  "camera not ready: %s",
+                                  _("cam_not_ready"),
                                   esp_err_to_name(st.last_error));
         } else if (st.test_pattern) {
             lv_label_set_text_fmt(s_cam_status,
-                                  "test pattern  %dx%d  frames=%d",
+                                  _("cam_test_pattern"),
                                   st.width, st.height, st.frame_count);
         } else {
             lv_label_set_text_fmt(s_cam_status,
-                                  "live %dx%d  swap:%s  frames=%d",
+                                  _("cam_live"),
                                   st.width, st.height,
-                                  st.byte_swap ? "on" : "off",
+                                  st.byte_swap ? _("on") : _("off"),
                                   st.frame_count);
         }
     }
@@ -2307,9 +2354,9 @@ static void win_content_cam(lv_obj_t *content)
     lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_scrollable(bar, false);
 
-    static const char *tab_names[3] = { "View", "Settings", "Log" };
+    static const char *tab_keys_cam[3] = { "view", "settings_tab", "log" };
     for (int i = 0; i < 3; i++) {
-        s_cam_tabbtn[i] = win_panel_button(bar, tab_names[i], false, WIN_PX(82));
+        s_cam_tabbtn[i] = win_panel_button(bar, _(tab_keys_cam[i]), false, WIN_PX(82));
         lv_obj_set_height(s_cam_tabbtn[i], WIN_PX(20));
         lv_obj_set_flex_grow(s_cam_tabbtn[i], 1);
         lv_obj_add_event_cb(s_cam_tabbtn[i], win_cam_tab_cb, LV_EVENT_CLICKED,
@@ -2356,16 +2403,16 @@ static void win_content_cam(lv_obj_t *content)
     lv_obj_set_flex_flow(controls, LV_FLEX_FLOW_ROW);
     lv_obj_set_scrollable(controls, false);
 
-    lv_obj_t *cap = win_panel_button(controls, "Capture", true, WIN_PX(66));
+    lv_obj_t *cap = win_panel_button(controls, _("capture"), true, WIN_PX(66));
     lv_obj_add_event_cb(cap, win_cam_capture_cb, LV_EVENT_CLICKED, NULL);
 
-    s_cam_auto_btn = win_panel_button(controls, "Auto", false, WIN_PX(52));
+    s_cam_auto_btn = win_panel_button(controls, _("auto"), false, WIN_PX(52));
     lv_obj_add_event_cb(s_cam_auto_btn, win_cam_auto_cb, LV_EVENT_CLICKED, NULL);
 
     /* ---- Settings page ---- */
     lv_obj_t *settings = s_cam_panel[1];
 
-    lv_obj_t *sz_lbl = win_content_label(settings, "frame size",
+    lv_obj_t *sz_lbl = win_content_label(settings, _("frame_size"),
                                          WIN_COLOR_TEXT_DIM);
     lv_obj_set_style_text_font(sz_lbl, WIN_FONT_TINY, LV_PART_MAIN);
 
@@ -2399,13 +2446,13 @@ static void win_content_cam(lv_obj_t *content)
     lv_obj_set_flex_flow(row2, LV_FLEX_FLOW_ROW);
     lv_obj_set_scrollable(row2, false);
 
-    s_cam_bs_btn = win_panel_button(row2, "Swap", false, WIN_PX(54));
+    s_cam_bs_btn = win_panel_button(row2, _("swap"), false, WIN_PX(54));
     lv_obj_add_event_cb(s_cam_bs_btn, win_cam_bs_cb, LV_EVENT_CLICKED, NULL);
 
-    s_cam_tp_btn = win_panel_button(row2, "Test", false, WIN_PX(54));
+    s_cam_tp_btn = win_panel_button(row2, _("test"), false, WIN_PX(54));
     lv_obj_add_event_cb(s_cam_tp_btn, win_cam_tp_cb, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *reinit = win_panel_button(row2, "Reinit", false, WIN_PX(60));
+    lv_obj_t *reinit = win_panel_button(row2, _("reinit"), false, WIN_PX(60));
     lv_obj_add_event_cb(reinit, win_cam_reinit_cb, LV_EVENT_CLICKED, NULL);
 
     /* ---- Log page ---- */
@@ -2798,6 +2845,7 @@ void ui_win_desktop_deinit(void)
     s_taskbar = NULL;
     s_start_button = NULL;
     s_apps_dd = NULL;
+    s_lang_dd = NULL;
     s_dd_map_count = 0;
     s_taskbar_center = NULL;
     s_clock = NULL;

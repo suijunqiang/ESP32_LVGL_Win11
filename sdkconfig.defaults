@@ -29,6 +29,11 @@ CONFIG_LV_FONT_MONTSERRAT_10=y
 CONFIG_LV_FONT_MONTSERRAT_12=y
 CONFIG_LV_FONT_MONTSERRAT_16=y
 
+# Source Han Sans SC 14/16 — LVGL's built-in Simplified Chinese CJK fonts,
+# used when the locale is zh-CN. English keeps Montserrat.
+CONFIG_LV_FONT_SOURCE_HAN_SANS_SC_14_CJK=y
+CONFIG_LV_FONT_SOURCE_HAN_SANS_SC_16_CJK=y
+
 # More room for the LVGL task and the network stack.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 CONFIG_FREERTOS_HZ=1000

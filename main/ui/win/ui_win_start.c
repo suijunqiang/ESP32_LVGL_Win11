@@ -8,6 +8,7 @@
  * above the taskbar (240 - 33 px taskbar - 2 px gap).
  */
 
+#include "lv_i18n.h"
 #include "ui_win_start.h"
 #include "ui_win_theme.h"
 #include "ui_win_widgets.h"
@@ -62,7 +63,7 @@ static lv_obj_t *win_start_search_create(lv_obj_t *parent)
     lv_obj_align(glyph, LV_ALIGN_LEFT_MID, 0, 0);
 
     lv_obj_t *label = lv_label_create(field);
-    lv_label_set_text(label, "Search apps and settings");
+    lv_label_set_text(label, _("start_search"));
     lv_obj_set_style_text_color(label, WIN_COLOR_TEXT_MUTED, LV_PART_MAIN);
     lv_obj_set_style_text_font(label, WIN_FONT_TINY, LV_PART_MAIN);
 
@@ -106,7 +107,7 @@ static void win_start_app_create(lv_obj_t *parent,
     lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, 0);
 
     lv_obj_t *caption = lv_label_create(cell);
-    lv_label_set_text(caption, app->label);
+    lv_label_set_text(caption, _(app->label));
     lv_obj_set_style_text_color(caption, WIN_COLOR_TEXT_DIM, LV_PART_MAIN);
     lv_obj_set_style_text_font(caption, WIN_FONT_TINY, LV_PART_MAIN);
     lv_obj_align(caption, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -138,7 +139,7 @@ static void win_start_recommended_create(lv_obj_t *parent,
     lv_obj_align(icon, LV_ALIGN_LEFT_MID, 0, 0);
 
     lv_obj_t *label = lv_label_create(row);
-    lv_label_set_text(label, app->label);
+    lv_label_set_text(label, _(app->label));
     lv_obj_set_style_text_color(label, WIN_COLOR_TEXT_DIM, LV_PART_MAIN);
     lv_obj_set_style_text_font(label, WIN_FONT_TINY, LV_PART_MAIN);
 }
@@ -165,13 +166,13 @@ static void win_start_footer_create(lv_obj_t *parent)
     win_style_decoration(avatar);
 
     lv_obj_t *initial = lv_label_create(avatar);
-    lv_label_set_text(initial, "S");
+    lv_label_set_text(initial, _("user_initials"));
     lv_obj_set_style_text_color(initial, WIN_COLOR_TEXT, LV_PART_MAIN);
     lv_obj_set_style_text_font(initial, WIN_FONT_TINY, LV_PART_MAIN);
     lv_obj_center(initial);
 
     lv_obj_t *user = lv_label_create(footer);
-    lv_label_set_text(user, "Sui");
+    lv_label_set_text(user, _("user_name"));
     lv_obj_set_style_text_color(user, WIN_COLOR_TEXT, LV_PART_MAIN);
     lv_obj_set_style_text_font(user, WIN_FONT_TINY, LV_PART_MAIN);
     lv_obj_align(user, LV_ALIGN_LEFT_MID, WIN_PX(30), 0);
@@ -240,7 +241,7 @@ lv_obj_t *ui_win_start_create(lv_obj_t *parent,
 
     win_start_search_create(panel);
 
-    win_start_header_create(panel, "Pinned");
+    win_start_header_create(panel, _("pinned"));
 
     /* The "Pinned" grid. */
     lv_obj_t *grid = lv_obj_create(panel);
@@ -257,7 +258,7 @@ lv_obj_t *ui_win_start_create(lv_obj_t *parent,
         win_start_app_create(grid, win_start_pinned[i], start);
     }
 
-    win_start_header_create(panel, "Recommended");
+    win_start_header_create(panel, _("recommended"));
 
     /* The "Recommended" list scrolls if more apps are available than fit. */
     lv_obj_t *list = lv_obj_create(panel);

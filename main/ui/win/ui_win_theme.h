@@ -76,12 +76,23 @@
 /* ------------------------------------------------------------------ */
 
 /* Fonts are one step smaller than the design sizes: on a 320 px wide panel
- * the original 12/14/16/20 px text would eat too much of the layout. */
-#define WIN_FONT_TINY           (&lv_font_montserrat_10)
-#define WIN_FONT_SMALL          (&lv_font_montserrat_12)
-#define WIN_FONT_BODY           (&lv_font_montserrat_12)
-#define WIN_FONT_LARGE          (&lv_font_montserrat_16)
-#define WIN_FONT_XL             (&lv_font_montserrat_16)
+ * the original 12/14/16/20 px text would eat too much of the layout. They
+ * are runtime-pointers so `app_i18n.c` can repoint them to Source Han Sans
+ * SC when the locale is zh-CN; by default they are the Montserrat variants. */
+LV_FONT_DECLARE(lv_font_montserrat_10);
+LV_FONT_DECLARE(lv_font_montserrat_12);
+LV_FONT_DECLARE(lv_font_montserrat_16);
+LV_FONT_DECLARE(lv_font_source_han_sans_sc_14_cjk);
+LV_FONT_DECLARE(lv_font_source_han_sans_sc_16_cjk);
+
+extern const lv_font_t *WIN_FONT_TINY;
+extern const lv_font_t *WIN_FONT_SMALL;
+extern const lv_font_t *WIN_FONT_BODY;
+extern const lv_font_t *WIN_FONT_LARGE;
+extern const lv_font_t *WIN_FONT_XL;
+
+/* Forward declaration — called once by app_i18n when the locale flips. */
+void ui_win_theme_set_fonts(bool zh);
 
 /* ------------------------------------------------------------------ */
 /* Metrics (design values, already scaled)                            */

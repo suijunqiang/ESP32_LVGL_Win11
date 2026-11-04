@@ -12,9 +12,21 @@ so the render loop is never blocked by the network.
 **Windows 11 desktop**
 - Gradient wallpaper, draggable desktop icons, Explorer / Photos / Terminal /
   Notepad tiles.
-- Start menu overlay, taskbar with Start button and running-app chips,
-  notifications tray (Wi-Fi / MQTT state, clock) and weather widget.
+- Start menu overlay, taskbar with Start button, an **Apps** dropdown, a
+  **language dropdown** (`Eng` / `简体`) and a notifications tray
+  (Wi-Fi / MQTT state, clock), plus a weather widget.
 - Multi-window manager with open / hide / show / close lifecycle.
+
+**Multi-language UI (English / 简体中文)**
+- English is the boot default; pick `简体` from the taskbar dropdown to
+  switch at runtime. The desktop is rebuilt with the new strings and fonts,
+  so every screen, menu and app window follows the choice.
+- Strings live in YAML (`translations/en-US.yml`, `translations/zh-CN.yml`)
+  and are compiled to C by `lv_i18n`; code uses gettext-style `_("key")`.
+- Chinese uses generated Noto Sans SC subsets (14 px / 16 px) because LVGL's
+  built-in Source Han Sans CJK fonts only carry ~1,200 hanzi — too few for
+  the UI labels. The subsets fall back to the built-in font for
+  `LV_SYMBOL_*` glyphs, so icons keep rendering.
 
 **Apps page — a left-tab LVGL tabview with three interactive pages**
 
@@ -39,6 +51,66 @@ so the render loop is never blocked by the network.
 - View/window manager with a full six-phase lifecycle
   (`init`/`open`/`pause`/`resume`/`close`/`deinit`) so hidden views release
   RAM and stop their animations.
+
+## Localization
+
+LVGL 9.6 ships `lv_translation`, but it is off by default, undocumented and
+not the recommended path, so the project uses the companion tool
+[lv_i18n](https://github.com/lvgl/lv_i18n) instead.
+
+| Piece | File |
+| --- | --- |
+| Source strings (English, the msg-id catalogue) | `translations/en-US.yml` |
+| Chinese translations | `translations/zh-CN.yml` |
+| Generated lookup tables | `main/ui/i18n/lv_i18n.c/.h` |
+| Locale + font switching wrapper | `main/ui/i18n/app_i18n.c/.h` |
+| Chinese glyph data | `main/ui/i18n/lv_font_zh_14.c`, `lv_font_zh_16.c` |
+
+Code marks user-visible text with `_("key")`. `_()` is a function call, so it
+cannot appear in `static const` initialisers — tables store the key strings and
+call `_()` at each use site. `app_i18n_set_locale()` swaps the `WIN_FONT_*`
+pointers (Montserrat for English, Noto Sans SC for Chinese) and the taskbar
+dropdown rebuilds the desktop through `ui_win_desktop_deinit()` +
+`ui_win_desktop_open()`, deferred with `lv_async_call()` so the dropdown is
+not deleted inside its own event callback.
+
+The generated translation tables and Chinese fonts are committed, so a normal
+build only needs ESP-IDF. Regenerating them needs Node.js:
+
+```bash
+# 0. Extract the SC face (index 2) from Noto Sans CJK and collect the
+#    characters used by the Chinese translations.
+python3 - <<'EOF'
+from fontTools.ttLib import TTCollection
+TTCollection('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc') \
+    .fonts[2].save('/tmp/NotoSansSC-Regular.otf')
+txt = open('translations/zh-CN.yml').read()
+open('/tmp/zh_chars.txt', 'w').write(
+    ''.join(sorted({c for c in txt if ord(c) > 127})))
+EOF
+
+# 1. Translations -> C tables (rerun after editing the YAML files)
+node_modules/.bin/lv_i18n compile -t 'translations/*.yml' \
+    -o 'main/ui/i18n' -l 'en-US'
+
+# 2. Subset Noto Sans SC to the characters in zh_chars.txt plus ASCII.
+node_modules/.bin/lv_font_conv --size 14 --bpp 4 --format lvgl \
+    --no-kerning --no-compress \
+    --font /tmp/NotoSansSC-Regular.otf -r 0x20-0x7E \
+    --symbols "$(cat /tmp/zh_chars.txt)" \
+    --lv-font-name lv_font_zh_14 \
+    --lv-fallback lv_font_source_han_sans_sc_14_cjk \
+    -o main/ui/i18n/lv_font_zh_14.c
+# repeat with --size 16 / lv_font_zh_16 /
+# lv_font_source_han_sans_sc_16_cjk
+```
+
+`--lv-fallback` makes LVGL fall back to its built-in CJK font, which is what
+supplies the `LV_SYMBOL_*` icon glyphs. If you add new Chinese strings, also
+add their characters to `/tmp/zh_chars.txt` and regenerate both sizes — an
+existing key that gains a new character will otherwise render as a blank box.
+`CONFIG_LV_FONT_SOURCE_HAN_SANS_SC_14_CJK` / `_16_CJK` must stay enabled in
+`sdkconfig.defaults` for that fallback to exist.
 
 ## Hardware
 
@@ -71,13 +143,21 @@ main/
     ui_manager.c/.h   view stack + lifecycle engine (framework, view agnostic)
     ui_views.c/.h     view ids, ui_view_t descriptor, registry
     ui_page_base.c/.h shared page container + default lifecycle helpers
+    i18n/
+      app_i18n.c/.h       locale + font switching wrapper
+      lv_i18n.c/.h        generated translation tables (do not hand-edit)
+      lv_font_zh_14.c      generated Noto Sans SC 14 px subset
+      lv_font_zh_16.c      generated Noto Sans SC 16 px subset
     win/
       ui_win_desktop.c/.h   desktop root: wallpaper, icons, start menu, taskbar
       ui_win_app_ui.c/.h    Apps tabview: honeycomb / galaxy / silk coverflow
       ui_win_start.c/.h     Start menu overlay
       ui_win_widgets.c/.h   reusable widgets (title bar, buttons, chips, tray)
-      ui_win_icons.c/.h     1-bit icon assets
-      ui_win_theme.h        colour palette, spacing, fonts
+      ui_win_icons.c/.h     app / shortcut tables with translation keys
+      ui_win_theme.h        colour palette, spacing, font pointers
+translations/
+  en-US.yml             English source strings (msg-id catalogue)
+  zh-CN.yml             Simplified Chinese translations
 tools/
   capture_screenshot.py     host-side UART capture tool
 ```
@@ -121,6 +201,9 @@ its animation timers.
 - Board connected over USB Serial/JTAG (shows up as `/dev/ttyACM0`).
 - For screenshot host tooling: `python3`, `pyserial`; optional `Pillow`
   (PNG output) and `mosquitto-clients` (`--trigger`).
+- Optional, only to regenerate strings or the Chinese fonts: Node.js with
+  `lv_i18n` and `lv_font_conv`, plus `fonttools`. The generated `.c` files
+  are committed, so a plain build does not need them.
 
 ## Build
 
@@ -133,10 +216,12 @@ idf.py build
 ```
 
 Target and required options (`esp32s3`, 16 MB flash, octal PSRAM,
-LVGL RGB565 big-endian, snapshot support, fonts) are pinned in
+LVGL RGB565 big-endian, snapshot support, Montserrat fonts and the Source Han
+Sans SC CJK fonts used as the Chinese fallback) are pinned in
 [sdkconfig.defaults](sdkconfig.defaults). On a fresh checkout run
 `idf.py set-target esp32s3` once; that regenerates `sdkconfig` *from the
-defaults*, so the LVGL colour options survive.
+defaults*, so the LVGL colour and font options survive — editing `sdkconfig`
+alone is not enough.
 
 Flash layout is custom ([partitions.csv](partitions.csv)): 3 MB factory app
 because Wi-Fi + MQTT + mbedTLS exceed the default 1 MB slot.
@@ -299,5 +384,7 @@ Notes:
 | Washed-out gradients | vendor gamma/VCOM table passed via `vendor_config` |
 | Icons drawn on the left, hit-boxes on the right | display mirror and touch axis are flipped independently |
 | MQTT not connected at boot | client starts before Wi-Fi has an IP; it retries automatically |
+| Some Chinese labels show blank boxes | the character is missing from the font subset — regenerate `lv_font_zh_14/16` (see [Localization](#localization)) |
+| Taskbar language switch does nothing | check the locale log plus `ui_win_desktop_deinit/open` in the rebuild path |
 | Screenshot times out | MQTT connected? another program holding `/dev/ttyACM0`? |
 | `lv_snapshot_take` returns NULL | PSRAM disabled, or `LV_USE_SNAPSHOT` off |

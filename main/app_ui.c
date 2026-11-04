@@ -21,6 +21,7 @@
 
 #include "app_mqtt.h"
 #include "app_wifi.h"
+#include "app_i18n.h"
 #include "screenshot.h"
 #include "ui_manager.h"
 #include "ui_views.h"
@@ -108,6 +109,7 @@ void app_ui_start(lv_display_t *display)
      * The manager drives the view lifecycle (init -> open) and later
      * pause/resume/close/deinit when navigation happens.
      */
+    app_i18n_init();
     ui_views_register_all();
     if (!ui_manager_init_with(VIEW_WIN_DESKTOP)) {
         ESP_LOGE(TAG, "cannot start the view manager");

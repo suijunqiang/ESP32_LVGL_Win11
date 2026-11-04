@@ -8,6 +8,10 @@ idf_component_register(
         "ui/app/app_bt.c"
         "ui/app/app_camera.c"
         "screenshot.c"
+        "ui/i18n/app_i18n.c"
+        "ui/i18n/lv_i18n.c"
+        "ui/i18n/lv_font_zh_14.c"
+        "ui/i18n/lv_font_zh_16.c"
         "ui/ui_page_base.c"
         "ui/ui_manager.c"
         "ui/ui_views.c"
@@ -20,6 +24,7 @@ idf_component_register(
         "."
         "ui"
         "ui/app"
+        "ui/i18n"
         "ui/win"
     REQUIRES
         lvgl
