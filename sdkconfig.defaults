@@ -38,6 +38,16 @@ CONFIG_LV_FONT_SOURCE_HAN_SANS_SC_16_CJK=y
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 CONFIG_FREERTOS_HZ=1000
 
+# ESP32-S3 camera: enable LCD_CAM hardware YUV422→RGB565 converter.
+# This bypasses native RGB565 pipeline issues on OV2640 modules.
+CONFIG_CAMERA_CONVERTER_ENABLED=y
+CONFIG_LCD_CAM_CONV_BT601_ENABLED=y
+CONFIG_LCD_CAM_CONV_FULL_RANGE_ENABLED=y
+
+# Keep the camera DMA buffer small so the RGB565 frame buffer also fits
+# in internal RAM (writing RGB to PSRAM drops image data).
+CONFIG_CAMERA_DMA_BUFFER_SIZE_MAX=16384
+
 # Bluetooth LE — the Bluetooth app runs the NimBLE host (GAP scan/adv/connect
 # plus a custom GATT service). Bluedroid is not used.
 CONFIG_BT_ENABLED=y

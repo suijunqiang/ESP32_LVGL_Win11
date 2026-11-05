@@ -162,9 +162,9 @@ static int set_window(sensor_t *sensor, ov2640_sensor_mode_t mode, int offset_x,
         c.clk_2x = 0;
         c.clk_div = 0;
         c.pclk_auto = 0;
-        c.pclk_div = 8;
+        c.pclk_div = 127;  /* max divider */
         if(mode == OV2640_MODE_UXGA) {
-            c.pclk_div = 12;
+            c.pclk_div = 127;
         }
         // if (sensor->xclk_freq_hz == 16000000) {
         //     c.pclk_div = c.pclk_div / 2;
@@ -177,11 +177,11 @@ static int set_window(sensor_t *sensor, ov2640_sensor_mode_t mode, int offset_x,
 #endif
         c.clk_div = 7;
         c.pclk_auto = 1;
-        c.pclk_div = 8;
+        c.pclk_div = 64;   /* slow PCLK for robust DVP */
         if (mode == OV2640_MODE_CIF) {
             c.clk_div = 3;
         } else if(mode == OV2640_MODE_UXGA) {
-            c.pclk_div = 12;
+            c.pclk_div = 64;
         }
     }
     ESP_LOGI(TAG, "Set PLL: clk_2x: %u, clk_div: %u, pclk_auto: %u, pclk_div: %u", c.clk_2x, c.clk_div, c.pclk_auto, c.pclk_div);

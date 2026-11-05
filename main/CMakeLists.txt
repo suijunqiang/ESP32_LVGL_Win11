@@ -20,6 +20,8 @@ idf_component_register(
         "ui/win/ui_win_start.c"
         "ui/win/ui_win_desktop.c"
         "ui/win/ui_win_app_ui.c"
+        "ui/win/ui_win_app_dots.c"
+        "ui/win/ui_win_app_mic.c"
     INCLUDE_DIRS
         "."
         "ui"

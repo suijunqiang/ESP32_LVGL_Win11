@@ -29,6 +29,8 @@
 
 #include "lv_i18n.h"
 #include "ui_win_app_ui.h"
+#include "ui_win_app_dots.h"
+#include "ui_win_app_mic.h"
 #include "ui_win_theme.h"
 
 #include <math.h>
@@ -1643,6 +1645,8 @@ static void ui_activity_update(void)
         vd_stop();
         sk_stop();
         hc_fling_stop();
+        ui_dots_stop();
+        ui_mic_stop();
         return;
     }
 
@@ -1650,13 +1654,31 @@ static void ui_activity_update(void)
         vd_start();
         sk_stop();
         hc_fling_stop();
+        ui_dots_stop();
+        ui_mic_stop();
     } else if (s_tab == 2) {
         sk_start();
         vd_stop();
         hc_fling_stop();
+        ui_dots_stop();
+        ui_mic_stop();
+    } else if (s_tab == 3) {
+        ui_dots_start();
+        vd_stop();
+        sk_stop();
+        hc_fling_stop();
+        ui_mic_stop();
+    } else if (s_tab == 4) {
+        ui_mic_start();
+        vd_stop();
+        sk_stop();
+        hc_fling_stop();
+        ui_dots_stop();
     } else {
         vd_stop();
         sk_stop();
+        ui_dots_stop();
+        ui_mic_stop();
     }
 }
 
@@ -1673,6 +1695,8 @@ static void ui_delete_cb(lv_event_t *event)
     vd_stop();
     sk_stop();
     hc_fling_stop();
+    ui_dots_stop();
+    ui_mic_stop();
     memset(&s_vd, 0, sizeof(s_vd));
     memset(&s_sk, 0, sizeof(s_sk));
     s_tv = NULL;
@@ -1688,7 +1712,7 @@ static void ui_tab_style(lv_obj_t *tv)
     lv_obj_set_style_pad_all(bar, 3, LV_PART_MAIN);
     lv_obj_set_style_pad_row(bar, 3, LV_PART_MAIN);
 
-    for (unsigned i = 0; i < 3; i++) {
+    for (unsigned i = 0; i < 5; i++) {
         lv_obj_t *btn = lv_tabview_get_tab_button(tv, (int32_t)i);
         if (btn == NULL) {
             continue;
@@ -1740,6 +1764,8 @@ void win_content_ui(lv_obj_t *content)
     lv_obj_t *p_hc = lv_tabview_add_tab(s_tv, "1");
     lv_obj_t *p_vd = lv_tabview_add_tab(s_tv, "2");
     lv_obj_t *p_sk = lv_tabview_add_tab(s_tv, "3");
+    lv_obj_t *p_dt = lv_tabview_add_tab(s_tv, "4");
+    lv_obj_t *p_mc = lv_tabview_add_tab(s_tv, "5");
 
     lv_obj_set_style_pad_all(p_hc, 0, LV_PART_MAIN);
     lv_obj_set_style_bg_color(p_hc, lv_color_black(), LV_PART_MAIN);
@@ -1748,6 +1774,8 @@ void win_content_ui(lv_obj_t *content)
     hc_watch_create(p_hc);
     vd_create(p_vd);
     sk_create(p_sk);
+    ui_dots_create(p_dt);
+    ui_mic_create(p_mc);
 
     ui_tab_style(s_tv);
     lv_obj_add_event_cb(s_tv, ui_tab_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
@@ -1763,6 +1791,8 @@ void win_content_ui(lv_obj_t *content)
     vd_layout();
     sk_layout();
     sk_place_cards();
+    ui_dots_relayout();
+    ui_mic_relayout();
 
     ui_activity_update();
 }

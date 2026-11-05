@@ -4,12 +4,13 @@
  * The sensor wiring (ESP32-S3, 8-bit DVP) is defined at the top of this
  * file and intentionally avoids the GPIOs used by the ILI9341 panel and the
  * XPT2046 touch controller.  The default is the OV2640 wiring used by the
- * ESP32-S3-EYE module.
+ * BOARD_ESP32S3_WROOM reference design.
  *
- * All operations are safe when the sensor is absent: esp_camera_init()'s
- * return code is stored in cam_status_t.last_error, and every capture that
- * cannot get a real frame buffer falls back to a colour-bar test pattern so
- * the panel can be exercised without working hardware.
+ * When the sensor is absent or miswired every capture falls back to a
+ * colour-bar test pattern so the panel can be exercised without working
+ * hardware. A boot-time SCCB pin sweep also reports which GPIO pair
+ * actually responds to OV2640 / OV7670, making it easy to fix the mapping
+ * without a scope.
  */
 
 #include "app_camera.h"
@@ -19,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "img_converters.h"
 #include "esp_camera.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -28,26 +30,43 @@
 
 #define CAM_TAG "cam"
 
-/* ------------------------------------------------------------------ */
-/* Sensor wiring                                                      */
-/* ------------------------------------------------------------------ */
-
+/* Sensor wiring
+ *
+ * When the user plugs an ESP32-CAM (OV2640) module onto an ESP32-S3
+ * board, the SCCB (camera I²C) SDA/SCL pins are whatever the module
+ * breaks out to — there's no universal answer. We keep two known-good
+ * ESP32-S3 OV2640 pinouts and try them in order at boot; the DVP data
+ * lines are common to both, so only SDA/SCL varies.
+ *
+ *   Pinout A: BOARD_ESP32S3_WROOM   SDA=4  SCL=5   ← your board works here
+ *   Pinout B: ESP32-S3-EYE / old    SDA=5  SCL=6
+ *
+ * DVP pins (shared across both):
+ *   XCLK=15, VSYNC=6, HREF=7, PCLK=13
+ *   D0..D7: 11,9,8,10,12,18,17,16
+ */
 #define CAM_PIN_PWDN    (-1)
 #define CAM_PIN_RESET   (-1)
 #define CAM_PIN_XCLK    15
-#define CAM_PIN_SIOD    5
-#define CAM_PIN_SIOC    6
-#define CAM_PIN_Y9      12
-#define CAM_PIN_Y8      13
-#define CAM_PIN_Y7      7
-#define CAM_PIN_Y6      4
-#define CAM_PIN_Y5      10
-#define CAM_PIN_Y4      8
-#define CAM_PIN_Y3      9
-#define CAM_PIN_Y2      11
-#define CAM_PIN_VSYNC   3
-#define CAM_PIN_HREF    14
-#define CAM_PIN_PCLK    16
+#define CAM_PIN_Y9      16      /* D7 */
+#define CAM_PIN_Y8      17      /* D6 */
+#define CAM_PIN_Y7      18      /* D5 */
+#define CAM_PIN_Y6      12      /* D4 */
+#define CAM_PIN_Y5      10      /* D3 */
+#define CAM_PIN_Y4      8       /* D2 */
+#define CAM_PIN_Y3      9       /* D1 */
+#define CAM_PIN_Y2      11      /* D0 */
+#define CAM_PIN_VSYNC   6
+#define CAM_PIN_HREF    7
+#define CAM_PIN_PCLK    13
+
+/* Try these SDA/SCL pairs in order at boot. */
+static const int s_sda_try[] = { 4, 5 };
+static const int s_scl_try[] = { 5, 6 };
+#define SDA_TRY_COUNT (sizeof(s_sda_try) / sizeof(s_sda_try[0]))
+
+static int s_pin_sda = 4;      /* chosen on first init */
+static int s_pin_scl = 5;
 
 /* ------------------------------------------------------------------ */
 /* State                                                              */
@@ -58,7 +77,9 @@ static SemaphoreHandle_t s_lock;
 static volatile bool s_inited;
 static volatile int  s_last_error;
 static volatile int  s_frame_size = FRAMESIZE_QQVGA;   /* 160 x 120     */
-static volatile bool s_byte_swap;
+/* jpg2rgb565 (swap_color_bytes = 0) already writes native little-endian
+ * RGB565, which is the layout the test pattern uses on this panel. */
+static volatile bool s_byte_swap = false;
 static volatile bool s_test_pattern;       /* true while we show a pattern  */
 static volatile int  s_frame_count;
 
@@ -269,6 +290,27 @@ static void cam_swap_bytes(uint16_t *buf, int w, int h)
     }
 }
 
+/* Turn one camera frame buffer into s_frame_buf (native RGB565). */
+static esp_err_t cam_decode_to_frame(camera_fb_t *fb)
+{
+    int w = fb->width;
+    int h = fb->height;
+
+    if (fb->format != PIXFORMAT_JPEG) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (!cam_alloc_frame(w, h)) {
+        return ESP_ERR_NO_MEM;
+    }
+    if (!jpg2rgb565(fb->buf, fb->len, (uint8_t *)s_frame_buf, JPEG_IMAGE_SCALE_0)) {
+        return ESP_FAIL;
+    }
+    if (s_byte_swap) {
+        cam_swap_bytes(s_frame_buf, w, h);
+    }
+    return ESP_OK;
+}
+
 /* Generated colour-bar + moving gradient used when the real sensor is
  * unavailable. It gives the LVGL image widget something to draw so the
  * whole UI can be verified without a working camera. */
@@ -317,8 +359,8 @@ static camera_config_t cam_make_config(framesize_t size)
         .pin_pwdn       = CAM_PIN_PWDN,
         .pin_reset      = CAM_PIN_RESET,
         .pin_xclk       = CAM_PIN_XCLK,
-        .pin_sccb_sda   = CAM_PIN_SIOD,
-        .pin_sccb_scl   = CAM_PIN_SIOC,
+        .pin_sccb_sda   = s_pin_sda,
+        .pin_sccb_scl   = s_pin_scl,
         .pin_d7         = CAM_PIN_Y9,
         .pin_d6         = CAM_PIN_Y8,
         .pin_d5         = CAM_PIN_Y7,
@@ -330,15 +372,22 @@ static camera_config_t cam_make_config(framesize_t size)
         .pin_vsync      = CAM_PIN_VSYNC,
         .pin_href       = CAM_PIN_HREF,
         .pin_pclk       = CAM_PIN_PCLK,
+        /* 20 MHz is the OV2640's nominal XVCLK (datasheet 6..27 MHz).  Running
+         * below that made the sensor's analog readout band horizontally even
+         * though its internal colourbar stayed clean.  PCLK is still kept slow
+         * by the pclk_div patch in ov2640.c, so the DVP bus stays happy. */
         .xclk_freq_hz   = 20000000,
         .ledc_timer     = LEDC_TIMER_0,
         .ledc_channel   = LEDC_CHANNEL_0,
-        .pixel_format   = PIXFORMAT_RGB565,
+        .pixel_format   = PIXFORMAT_JPEG,   /* decoded to RGB565 in software */
         .frame_size     = size,
         .jpeg_quality   = 12,
+        /* Auto sizing uses width*height/5 (3840 B at QQVGA), which truncates
+         * real JPEG frames and the driver reports "NO-EOI".  Give it room. */
+        .jpeg_buffer_size = 32768,
         .fb_count       = 1,
         .fb_location    = CAMERA_FB_IN_PSRAM,
-        .grab_mode      = CAMERA_GRAB_LATEST,
+        .grab_mode      = CAMERA_GRAB_WHEN_EMPTY,
     };
     return c;
 }
@@ -363,17 +412,50 @@ static esp_err_t cam_init_sensor(framesize_t size)
         s->set_saturation(s, 0);
         s->set_vflip(s, 0);
         s->set_hmirror(s, 0);
-        app_camera_log("sensor ready: framesize=%d pid=0x%x",
-                       s->status.framesize, s->id.PID);
-        ESP_LOGI(CAM_TAG, "sensor framesize %d pid 0x%x",
-                 s->status.framesize, s->id.PID);
+
+        ESP_LOGI(CAM_TAG, "sensor ok: framesize=%d pid=0x%x byte_swap=%d",
+                 s->status.framesize, s->id.PID, (int)s_byte_swap);
     } else {
         app_camera_log("init ok but no sensor descriptor");
+    }
+
+    /* Warm-up + flush: the OV2640's AGC/AWB/AEC need ~200 ms to lock and
+     * the first frames can come out blank. */
+    vTaskDelay(pdMS_TO_TICKS(220));
+    for (int i = 0; i < 3; i++) {
+        camera_fb_t *fb = esp_camera_fb_get();
+        if (fb != NULL) {
+            esp_camera_fb_return(fb);
+        }
     }
 
     s_last_error = ESP_OK;
     s_inited = true;
     return ESP_OK;
+}
+
+/* Try the two known ESP32-S3 OV2640 pinouts in order. The DVP lines
+ * (XCLK, D0-D7, VSYNC, HREF, PCLK) are identical across both; only the
+ * SCCB (camera I²C) SDA/SCL differ, so we retry with those swapped. */
+static esp_err_t cam_init_sensor_try_all(framesize_t size)
+{
+    for (unsigned i = 0; i < SDA_TRY_COUNT; i++) {
+        s_pin_sda = s_sda_try[i];
+        s_pin_scl = s_scl_try[i];
+        ESP_LOGI(CAM_TAG, "trying camera SDA=%d SCL=%d", s_pin_sda, s_pin_scl);
+        app_camera_log("trying SDA=%d SCL=%d...", s_pin_sda, s_pin_scl);
+        esp_err_t err = cam_init_sensor(size);
+        if (err == ESP_OK) {
+            app_camera_log("OK — SDA=%d SCL=%d", s_pin_sda, s_pin_scl);
+            return ESP_OK;
+        }
+        ESP_LOGW(CAM_TAG, "  SDA=%d SCL=%d failed: %s",
+                 s_pin_sda, s_pin_scl, esp_err_to_name(err));
+        /* esp32-camera keeps the port open even on failure; deinit and
+         * retry with the next pair. */
+        esp_camera_deinit();
+    }
+    return ESP_FAIL;
 }
 
 void app_camera_init(void)
@@ -390,12 +472,9 @@ void app_camera_init(void)
     cam_unlock();
 
     framesize_t size = (framesize_t)s_frame_size;
-    esp_err_t err = cam_init_sensor(size);
+    esp_err_t err = cam_init_sensor_try_all(size);
 
     if (err != ESP_OK) {
-        /* Hardware absent / miswired: fall back to the test pattern so the
-         * UI is still usable. The panel can attempt app_camera_reinit()
-         * once the wiring is fixed. */
         int idx = size_index_by_value(size);
         int w = (idx >= 0) ? s_frame_sizes[idx].w : 160;
         int h = (idx >= 0) ? s_frame_sizes[idx].h : 120;
@@ -407,6 +486,7 @@ void app_camera_init(void)
             app_camera_log("no frame buffer");
         }
     }
+
 }
 
 void app_camera_get_status(cam_status_t *out)
@@ -467,26 +547,14 @@ esp_err_t app_camera_capture(void)
         return ESP_FAIL;
     }
 
-    int w = fb->width;
-    int h = fb->height;
-    bool swap = s_byte_swap;
-
-    if (fb->format == PIXFORMAT_RGB565 && cam_alloc_frame(w, h)) {
-        size_t bytes = (size_t)w * (size_t)h * sizeof(uint16_t);
-        if (fb->len >= bytes) {
-            memcpy(s_frame_buf, fb->buf, bytes);
-            if (swap) {
-                cam_swap_bytes(s_frame_buf, w, h);
-            }
-            s_frame_count++;
-            s_test_pattern = false;
-            s_last_error = ESP_OK;
-        } else {
-            app_camera_log("capture: short frame %u bytes", (unsigned)fb->len);
-        }
+    esp_err_t err = cam_decode_to_frame(fb);
+    if (err == ESP_OK) {
+        s_frame_count++;
+        s_test_pattern = false;
+        s_last_error = ESP_OK;
     } else {
-        app_camera_log("capture: format %d unsupported", (int)fb->format);
-        s_last_error = ESP_ERR_NOT_SUPPORTED;
+        app_camera_log("capture: decode failed (%s)", esp_err_to_name(err));
+        s_last_error = err;
     }
 
     esp_camera_fb_return(fb);
